@@ -1,0 +1,6 @@
+/AIRagAPI/appsettings.json
+/AIRagAPI/appsettings.Development.json
+global.json
+AIRagAPI/bin
+AIRagAPI/obj
+/.idea

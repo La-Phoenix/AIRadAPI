@@ -1,0 +1,6 @@
+@AIRagAPI_HostAddress = http://localhost:5248
+
+GET {{AIRagAPI_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
