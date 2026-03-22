@@ -1,8 +1,9 @@
-using AIRagAPI.Services.Vector;
 using Microsoft.Extensions.AI;
 using Microsoft.SemanticKernel;
 using Qdrant.Client;
 using Qdrant.Client.Grpc;
+
+namespace AIRagAPI.Services.Vector;
 
 public class VectorService: IVectorService
 {
@@ -12,7 +13,7 @@ public class VectorService: IVectorService
     private readonly IEmbeddingGenerator<string, Embedding<float>> _embeddingGenerator;
     private const string CollectionName = "documents_nomic_768";
     
-    public VectorService(Kernel kernel, IConfiguration config, IEmbeddingGenerator<string, Embedding<float>> embeddingGenerator)
+    public VectorService(Kernel kernel, IConfiguration config, IEmbeddingGenerator<string, Embedding<float>> embeddingGenerator, ILogger<VectorService> logger)
     {
         _kernel = kernel;
         string endpoint = config["Qdrant:ApiEndpoint"] 
@@ -37,50 +38,93 @@ public class VectorService: IVectorService
         
         EnsureCollectionExists().GetAwaiter().GetResult();
         _embeddingGenerator = embeddingGenerator;
+        _logger = logger;
     }
 
     /// <summary>
-    /// Create a new text vector
+    /// Create a new text vector with chunking (i.e document - structured container)
     /// </summary>
-    /// <param name="id"></param>
     /// <param name="text"></param>
     public async Task AddDocumentAsync(string text)
     {
-        //Generate embedding using embedding Geneartor
-        var result = await _embeddingGenerator.GenerateAsync(new[] { text });
-        var vector = result[0].Vector.ToArray();
-
-        // Qdrant record record consisting of a vector and optional payload
-        var point = new PointStruct
-        {
-            Id = new PointId { Uuid = ComputeUuidFromText(text) },  // deterministic ID to override for duplicates
-            Vectors = vector,
-            Payload = { ["text"] = text}
-        };
+        var docId = Guid.NewGuid().ToString();
+        //Create Chunks for text input
+        var chunks = ChunkText(text);
+        var result = await _embeddingGenerator.GenerateAsync(chunks);
         
-        await _qdrant.UpsertAsync(CollectionName, new List<PointStruct> { point });
+        // Create points for each chunks
+        var points = new List<PointStruct>();
+        
+        for (int i = 0 ; i < chunks.Count; i++)
+        {
+            var chunk = chunks[i];
+            var vector = result[i].Vector.ToArray();
+            
+            points.Add(new PointStruct() // Qdrant record consisting of a vector and optional payload
+            {
+                Id = Guid.NewGuid(),
+                Vectors = vector, // Vector - A one dimensional resizable array
+                Payload =
+                {
+                    ["text"] = chunk,
+                    ["docId"] = docId,
+                    ["chunkIndex"] = i,
+                    ["source"] = "input"
+                }
+            });
+        }
+        
+        await _qdrant.UpsertAsync(CollectionName, points);
     }
 
     /// <summary>
-    /// Search for text vector similarities
+    /// Search for text vector similarities - Hybrid Search (Vector + Keyword)
     /// </summary>
     /// <param name="query"></param>
     /// <param name="top"></param>
     /// <returns></returns>
-    public async Task<List<string>> SearchAsync(string query, ulong top = 3)
+    public async Task<List<string>> SearchAsync(string query, ulong top = 5)
     {
+        // Vector Search (existing)
         var result = await _embeddingGenerator.GenerateAsync(new[] { query });
         var vector = result.First().Vector.ToArray();
 
-        var searchResult = await _qdrant.QueryAsync(
+        var vectorResults = await _qdrant.QueryAsync(
             collectionName: CollectionName,
             query: vector, 
-            limit: top // Top n similarities
+            limit: top * 2 // Get more candidates
         );
+        
+        // Keyword Scoring
+        var queryWords = query
+            .ToLower()
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
-        return searchResult
+        var scored = vectorResults
             .Where(r => r.Payload.ContainsKey("text"))
-            .Select(r => r.Payload["text"]?.ToString() ?? string.Empty).ToList();
+            .Select(r =>
+            {
+                var chunk = r.Payload["text"]?.ToString() ?? "";
+                var chunkLower = chunk.ToLower();
+            
+                // Count how many query words are contained in a chunk for ranking
+                int keyWordScore = queryWords.Count(w => chunkLower.Contains(w)); 
+            
+                //Combine Scores
+                double finalScore = r.Score + (keyWordScore * 0.1);
+                return new
+                {
+                    Text = chunk,
+                    Score = finalScore
+                };
+            });
+
+        // Re-rank
+        return scored
+            .OrderByDescending(x => x.Score)
+            .Take((int)top)
+            .Select(x => x.Text)
+            .ToList();
     }
 
     public async Task<string> AskAsync(string question)
@@ -107,11 +151,11 @@ public class VectorService: IVectorService
 
 
     /// <summary>
-    /// Check if vecctor collection exists, creates new if it doesn't
+    /// Check if a vector collection exists, creates new if it doesn't
     /// </summary>
     private async Task EnsureCollectionExists()
     {
-        const ulong ExpectedDimension = 768; // ← for nomic-embed-text
+        const ulong expectedDimension = 768; // ← for nomic-embed-text
         var exists = await _qdrant.CollectionExistsAsync(CollectionName);
         if (!exists)
         {
@@ -119,13 +163,18 @@ public class VectorService: IVectorService
                 CollectionName, 
                 new VectorParams
                 {
-                    Size = ExpectedDimension, // Embedding Size (MiniLM),
+                    Size = expectedDimension, // Embedding Size (MiniLM),
                     Distance = Distance.Cosine // Distance metric for comparing vectors - Cosine works well for semantic search
                 });
         }
     }
     
-    private string ComputeUuidFromText(string text)
+    /// <summary>
+    /// Create a Uuid from text - To avoid duplicate text embedding
+    /// </summary>
+    /// <param name="text"></param>
+    /// <returns></returns>
+    private static string ComputeUuidFromText(string text)
     {
         // Simple: use SHA256 hash of the text, then take first 36 chars as UUID-like string
         using var sha256 = System.Security.Cryptography.SHA256.Create();
@@ -133,5 +182,24 @@ public class VectorService: IVectorService
         var hash = sha256.ComputeHash(bytes);
         var guid = new Guid(hash.Take(16).ToArray());  // first 128 bits → valid GUID
         return guid.ToString();
+    }
+
+    /// <summary>
+    /// Create text chunks to reduce retrieval quality drops and reduce inaccuracy when text/document gets long
+    /// </summary>
+    /// <param name="text"></param>
+    /// <param name="chunkSize"></param>
+    /// <returns></returns>
+    private static List<string> ChunkText(string text, int chunkSize = 300)
+    {
+        var words = text.Split(' ');
+        var chunks = new List<string>();
+
+        for (int i = 0; i < words.Length; i += chunkSize)
+        {
+            var chunk = string.Join(" ", words.Skip(i).Take(chunkSize));
+            chunks.Add(chunk);
+        }
+        return chunks;
     }
 }

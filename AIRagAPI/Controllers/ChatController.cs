@@ -1,3 +1,5 @@
+using AIRagAPI.Agents;
+using AIRagAPI.Services.Agents;
 using AIRagAPI.Services.Vector;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.SemanticKernel;
@@ -21,20 +23,45 @@ public class ChatController: ControllerBase
     /// <summary>
     /// What's on Your Mind? Ask what you'd like to know about
     /// </summary>
-    /// <param name="question"></param>
+    /// <param name="request"></param>
     /// <returns></returns>
-    [HttpGet]
-    public async Task<IActionResult> Ask([FromQuery] string question)
+    [HttpPost]
+    public async Task<IActionResult> Ask([FromBody] ChatRequest request)
     {
         try
         {
-            var data = await _vectorService.AskAsync(question);
-            return Ok(data);
+            var agents = new List<IAgent>
+            {
+                new RetrieverAgent(_vectorService),
+                new SummarizeAgent(_kernel)
+            };
+            
+            var coordinator = new AgentCoordinator(agents);
+            
+            var answer = await coordinator.AskAsync(request.Question);
+
+            var chatResponse = new ChatResponse
+            {
+                Question = request.Question,
+                Message = answer
+            };
+            return Ok(chatResponse);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "An error occured while asking for question");
             return StatusCode(500, "An error occured while asking for question");
         }
+    }
+
+    public record ChatRequest
+    {
+        public required string Question { get; init; }
+    }
+
+    public record ChatResponse
+    {
+        public required string Question { get; init; }
+        public required string Message { get; init; }
     }
 }
