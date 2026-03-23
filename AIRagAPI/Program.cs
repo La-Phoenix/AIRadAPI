@@ -10,6 +10,8 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
+//For only production
+builder.WebHost.UseUrls("http://+:8080");
 
 builder.Services.AddOpenApi();
 
@@ -31,7 +33,7 @@ builder.Services.AddSingleton(sp =>
 // Register Ollama Embedding Generator and it's base address
 builder.Services.AddHttpClient<OllamaEmbeddingGenerator>(client =>
 {
-    client.BaseAddress = new Uri("http://localhost:11434");
+    client.BaseAddress = new Uri(builder.Configuration["Ollama:BaseUrl"]!);
 });
 
 builder.Services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>>(sp => sp.GetRequiredService<OllamaEmbeddingGenerator>());
@@ -41,13 +43,29 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddControllers();
 
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowFrontend", policy =>
+    {
+        policy.WithOrigins(builder.Configuration["Frontend:BaseUrl"]!, "https://localhost:3000");
+        policy.AllowAnyHeader();
+        policy.AllowAnyMethod();
+        policy.AllowCredentials(); // For Cookies/auth
+    });
+});
+
 var app = builder.Build();
 
 app.UseSwagger();
 app.UseSwaggerUI();
 app.UseExceptionHandler();
 
-app.UseHttpsRedirection();
+if (!app.Environment.IsEnvironment("Docker"))
+{
+    app.UseHttpsRedirection();
+}
+app.UseCors("AllowFrontend");
 app.UseAuthorization();
 app.MapControllers();
 

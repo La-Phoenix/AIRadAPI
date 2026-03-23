@@ -1,5 +1,7 @@
+
 using AIRagAPI.Agents;
 using AIRagAPI.Services.Agents;
+using AIRagAPI.Services.DTOs;
 using AIRagAPI.Services.Vector;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.SemanticKernel;
@@ -35,9 +37,9 @@ public class ChatController: ControllerBase
                 new RetrieverAgent(_vectorService),
                 new SummarizeAgent(_kernel)
             };
-            
+
             var coordinator = new AgentCoordinator(agents);
-            
+
             var answer = await coordinator.AskAsync(request.Question);
 
             var chatResponse = new ChatResponse
@@ -45,23 +47,24 @@ public class ChatController: ControllerBase
                 Question = request.Question,
                 Message = answer
             };
-            return Ok(chatResponse);
+            var resp = new Response<ChatResponse>
+            {
+                Message = "Chat request successful.",
+                Data = chatResponse,
+                IsSuccess = true
+            };
+            return Ok(resp);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "An error occured while asking for question");
-            return StatusCode(500, "An error occured while asking for question");
+            var resp = new Response<string>
+            {
+                Message = "An error occured while asking for question.",
+                Data = null,
+                IsSuccess = false
+            };
+            return StatusCode(500, resp);
         }
-    }
-
-    public record ChatRequest
-    {
-        public required string Question { get; init; }
-    }
-
-    public record ChatResponse
-    {
-        public required string Question { get; init; }
-        public required string Message { get; init; }
     }
 }
