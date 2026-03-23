@@ -68,5 +68,6 @@ if (!app.Environment.IsEnvironment("Docker"))
 app.UseCors("AllowFrontend");
 app.UseAuthorization();
 app.MapControllers();
+app.MapHealthChecks("/health");
 
 app.Run();
