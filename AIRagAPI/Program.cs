@@ -48,13 +48,13 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
-        policy.WithOrigins();
+        policy.WithOrigins(builder.Configuration["Frontend:BaseUrl"]!);
         policy.AllowAnyHeader();
         policy.AllowAnyMethod();
         policy.AllowCredentials(); // For Cookies/auth
     });
 });
-
+builder.Services.AddHealthChecks();
 var app = builder.Build();
 
 app.UseSwagger();
