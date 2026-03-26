@@ -1,28 +1,5 @@
 #Development
-#services:
-#  api:
-#    build:
-#      context: ./AIRagAPI
-#      dockerfile: Dockerfile
-#    ports:
-#      - "5001:5000"
-#    environment:
-#      DOTNET_USE_POLLING_FILE_WATCHER: "true"
-#    volumes:
-#      - ./AIRagAPI:/app:rw
-#      - ~/.nuget/packages:/root/.nuget/packages
-#    working_dir: /app
-#
-#  ollama:
-#    image: ollama/ollama
-#    command: serve
-#    ports:
-#      - "11434:11434"
-#    volumes:
-#      - ollama_data:/root/.ollama
-#
-#volumes:
-#  ollama_data:
+/
 
 #Production
 services:
