@@ -64,4 +64,4 @@ EXPOSE 8080
 EXPOSE 11434
 
 # Start Ollama in background, then start backend
-ENTRYPOINT sh -c "ollama serve & dotnet AIRagAPI.dll"
+ENTRYPOINT ["sh", "-c", "ollama serve & sleep 5 && exec dotnet AIRagAPI.dll"]
