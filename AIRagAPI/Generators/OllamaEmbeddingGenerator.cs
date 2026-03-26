@@ -8,11 +8,13 @@ public class OllamaEmbeddingGenerator : IEmbeddingGenerator<string, Embedding<fl
 {
     private readonly HttpClient _httpClient;
     private readonly string _modelName; // e.g. "nomic-embed-text"
+    private readonly ILogger<OllamaEmbeddingGenerator> _logger;
 
-    public OllamaEmbeddingGenerator(HttpClient httpClient, string modelName = "nomic-embed-text")
+    public OllamaEmbeddingGenerator(HttpClient httpClient, ILogger<OllamaEmbeddingGenerator> logger, string modelName = "nomic-embed-text")
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _modelName = modelName;
+        _logger = logger;
     }
 
     public async Task<GeneratedEmbeddings<Embedding<float>>> GenerateAsync(
@@ -20,35 +22,49 @@ public class OllamaEmbeddingGenerator : IEmbeddingGenerator<string, Embedding<fl
         EmbeddingGenerationOptions? options = null,
         CancellationToken cancellationToken = default)
     {
-        var embeddings = new List<Embedding<float>>();
-
-        // Ollama supports batch input as array — send all at once for efficiency
-        var requestBody = new
+        int attempts = 1;
+        while (attempts < 6)
         {
-            model = _modelName,
-            input = values.ToArray() // array for batch
-        };
+            try
+            {
+                var embeddings = new List<Embedding<float>>();
 
-        var response = await _httpClient.PostAsJsonAsync("/api/embed", requestBody, cancellationToken);
-        response.EnsureSuccessStatusCode();
+                // Ollama supports batch input as array — send all at once for efficiency
+                var requestBody = new
+                {
+                    model = _modelName,
+                    input = values.ToArray() // array for batch
+                };
 
-        var rawJson = await response.Content.ReadAsStringAsync(cancellationToken);
-        // Console.WriteLine($"Ollama raw response: {rawJson}"); // ← keep for debugging, then use ILogger
+                var response = await _httpClient.PostAsJsonAsync("/api/embed", requestBody, cancellationToken);
+                response.EnsureSuccessStatusCode();
 
-        var result = await response.Content.ReadFromJsonAsync<OllamaEmbedResponse>(cancellationToken: cancellationToken);
+                var rawJson = await response.Content.ReadAsStringAsync(cancellationToken);
+                // Console.WriteLine($"Ollama raw response: {rawJson}"); // ← keep for debugging, then use ILogger
 
-        if (result?.Embeddings == null || !result.Embeddings.Any())
-        {
-            throw new InvalidOperationException($"Ollama returned no embeddings. Raw: {rawJson}");
+                var result = await response.Content.ReadFromJsonAsync<OllamaEmbedResponse>(cancellationToken: cancellationToken);
+
+                if (result?.Embeddings == null || !result.Embeddings.Any())
+                {
+                    throw new InvalidOperationException($"Ollama returned no embeddings. Raw: {rawJson}");
+                }
+
+                // Ollama returns list of arrays for batch input
+                foreach (var vector in result.Embeddings)
+                {
+                    embeddings.Add(new Embedding<float>(vector));
+                }
+
+                return new GeneratedEmbeddings<Embedding<float>>(embeddings);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to generate Ollama embeddings after {Attempts} attempt(s): ", attempts);
+                attempts++;
+                await Task.Delay(1000, cancellationToken); // Wait 1 second before retry
+            }
         }
-
-        // Ollama returns list of arrays for batch input
-        foreach (var vector in result.Embeddings)
-        {
-            embeddings.Add(new Embedding<float>(vector));
-        }
-
-        return new GeneratedEmbeddings<Embedding<float>>(embeddings);
+        throw new InvalidOperationException("Failed to generate Ollama embeddings after 5 retries");
     }
 
     // For single-string convenience if needed elsewhere
