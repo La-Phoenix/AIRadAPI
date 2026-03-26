@@ -37,10 +37,17 @@ public class OllamaEmbeddingGenerator : IEmbeddingGenerator<string, Embedding<fl
                 };
 
                 var response = await _httpClient.PostAsJsonAsync("/api/embed", requestBody, cancellationToken);
-                response.EnsureSuccessStatusCode();
+                // response.EnsureSuccessStatusCode();
 
                 var rawJson = await response.Content.ReadAsStringAsync(cancellationToken);
                 Console.WriteLine($"Ollama raw response: {rawJson}"); // ← keep for debugging, then use ILogger
+                _logger.LogInformation("Ollama raw response: {rawJson}", rawJson);
+                
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogError("Ollama error: {Status} - {Body}", response.StatusCode, rawJson);
+                    throw new Exception($"Ollama error: {rawJson}");
+                }
 
                 var result = await response.Content.ReadFromJsonAsync<OllamaEmbedResponse>(cancellationToken: cancellationToken);
 
