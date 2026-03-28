@@ -30,13 +30,17 @@ builder.Services.AddSingleton(sp =>
     return kernelBuilder.Build();
 });
 
-// Register Ollama Embedding Generator and it's base address
-builder.Services.AddHttpClient<OllamaEmbeddingGenerator>(client =>
+// Register Gemini Embedding Generator and it's base address
+// Add HttpClient for Gemini API
+builder.Services.AddHttpClient<GeminiEmbeddingGenerator>(client =>
 {
-    client.BaseAddress = new Uri(builder.Configuration["Ollama:BaseUrl"]!);
+    client.BaseAddress = new Uri(builder.Configuration["Gemini:BaseUrl"]!);
+    client.DefaultRequestHeaders.Add("x-goog-api-key", builder.Configuration["Gemini:ApiKey"]);
+    client.Timeout = TimeSpan.FromMinutes(30); // Prevent request from hanging when Gemini req hangs
 });
 
-builder.Services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>>(sp => sp.GetRequiredService<OllamaEmbeddingGenerator>());
+// Use as IEmbeddingGenerator
+builder.Services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>>(sp => sp.GetRequiredService<GeminiEmbeddingGenerator>());
 
 builder.Services.AddSingleton<IVectorService, VectorService>();
 builder.Services.AddEndpointsApiExplorer();

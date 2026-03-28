@@ -1,93 +1,109 @@
 using Microsoft.Extensions.AI;
-using System.Text.Json.Serialization;
 using System.Net.Http.Json;
+using System.Text.Json.Serialization;
 
 namespace AIRagAPI.Generators;
 
-public class OllamaEmbeddingGenerator : IEmbeddingGenerator<string, Embedding<float>>
+public class GeminiEmbeddingGenerator(
+    HttpClient httpClient,
+    ILogger<GeminiEmbeddingGenerator> logger,
+    string modelName = "gemini-embedding-001")
+    : IEmbeddingGenerator<string, Embedding<float>>
 {
-    private readonly HttpClient _httpClient;
-    private readonly string _modelName; // e.g. "nomic-embed-text"
-    private readonly ILogger<OllamaEmbeddingGenerator> _logger;
-
-    public OllamaEmbeddingGenerator(HttpClient httpClient, ILogger<OllamaEmbeddingGenerator> logger, string modelName = "nomic-embed-text")
-    {
-        _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
-        _modelName = modelName;
-        _logger = logger;
-    }
+    private string BuildUrl() => $"v1beta/models/{modelName}:embedContent";
 
     public async Task<GeneratedEmbeddings<Embedding<float>>> GenerateAsync(
-        IEnumerable<string> values,
+        IEnumerable<string> inputs,
         EmbeddingGenerationOptions? options = null,
         CancellationToken cancellationToken = default)
     {
-        int attempts = 1;
-        while (attempts < 6)
+        using var semaphore = new SemaphoreSlim(5); // control concurrency
+
+        var tasks = inputs
+            .Select(input => ProcessInputAsync(input, semaphore, cancellationToken))
+            .ToList(); // prevents semaphore disposal warning
+
+        var embeddings = await Task.WhenAll(tasks);
+
+        return new GeneratedEmbeddings<Embedding<float>>(embeddings);
+    }
+    private async Task<Embedding<float>> ProcessInputAsync(
+        string input,
+        SemaphoreSlim semaphore,
+        CancellationToken cancellationToken)
+    {
+        await semaphore.WaitAsync(cancellationToken);
+
+        try
         {
+            var payload = new
+            {
+                content = new
+                {
+                    parts = new[]
+                    {
+                        new { text = input }
+                    }
+                }
+            };
+
+            var response = await httpClient.PostAsJsonAsync(BuildUrl(), payload, cancellationToken);
+
+            var raw = await response.Content.ReadAsStringAsync(cancellationToken);
+
+            logger.LogDebug("Gemini response received. Length: {Length}", raw.Length);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                logger.LogError("Gemini API failed: {Status} - {Raw}",
+                    response.StatusCode, raw);
+
+                throw new HttpRequestException(
+                    $"Gemini API failed with status {response.StatusCode}");
+            }
+
+            GeminiEmbedResponse? result;
+
             try
             {
-                var embeddings = new List<Embedding<float>>();
-
-                // Ollama supports batch input as array — send all at once for efficiency
-                var requestBody = new
-                {
-                    model = _modelName,
-                    input = values.ToArray() // array for batch
-                };
-
-                var response = await _httpClient.PostAsJsonAsync("/api/embed", requestBody, cancellationToken);
-                // response.EnsureSuccessStatusCode();
-
-                var rawJson = await response.Content.ReadAsStringAsync(cancellationToken);
-                Console.WriteLine($"Ollama raw response: {rawJson}"); // ← keep for debugging, then use ILogger
-                _logger.LogInformation("Ollama raw response: {rawJson}", rawJson);
-                
-                if (!response.IsSuccessStatusCode)
-                {
-                    _logger.LogError("Ollama error: {Status} - {Body}", response.StatusCode, rawJson);
-                    throw new Exception($"Ollama error: {rawJson}");
-                }
-
-                var result = await response.Content.ReadFromJsonAsync<OllamaEmbedResponse>(cancellationToken: cancellationToken);
-
-                if (result?.Embeddings == null || !result.Embeddings.Any())
-                {
-                    throw new InvalidOperationException($"Ollama returned no embeddings. Raw: {rawJson}");
-                }
-
-                // Ollama returns list of arrays for batch input
-                foreach (var vector in result.Embeddings)
-                {
-                    embeddings.Add(new Embedding<float>(vector));
-                }
-
-                return new GeneratedEmbeddings<Embedding<float>>(embeddings);
+                result = await response.Content.ReadFromJsonAsync<GeminiEmbedResponse>(
+                    cancellationToken: cancellationToken);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to generate Ollama embeddings after {Attempts} attempt(s): ", attempts);
-                attempts++;
-                await Task.Delay(1000, cancellationToken); // Wait 1 second before retry
+                logger.LogError(ex, "Failed to parse Gemini response: {Raw}", raw);
+                throw;
             }
+
+            if (result?.Embedding?.Values == null || result.Embedding.Values.Length == 0)
+                throw new Exception($"Gemini returned no embeddings. Raw: {raw}");
+
+            return new Embedding<float>(result.Embedding.Values);
         }
-        throw new InvalidOperationException("Failed to generate Ollama embeddings after 5 retries");
+        finally
+        {
+            semaphore.Release();
+        }
     }
 
-    // For single-string convenience if needed elsewhere
-    public async Task<Embedding<float>> GenerateAsync(string text, CancellationToken ct = default)
+    // public async Task<Embedding<float>> GenerateAsync(string text, CancellationToken ct = default)
+    // {
+    //     var results = await GenerateAsync(new[] { text }, cancellationToken: ct);
+    //     return results.First();
+    // }
+
+    private class GeminiEmbedResponse
     {
-        var results = await GenerateAsync(new[] { text }, cancellationToken: ct);
-        return results.First();
+        [JsonPropertyName("embedding")]
+        public EmbeddingValues? Embedding { get; set; }
     }
 
-    private class OllamaEmbedResponse
+    private class EmbeddingValues
     {
-        [System.Text.Json.Serialization.JsonPropertyName("embeddings")]
-        public float[][]? Embeddings { get; set; }
+        [JsonPropertyName("values")]
+        public float[]? Values { get; set; }
     }
 
-    // Required stubs
     public object? GetService(Type serviceType, object? serviceKey = null) => null;
     public void Dispose() { }
 }
