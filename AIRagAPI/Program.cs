@@ -3,7 +3,6 @@ using AIRagAPI.Generators;
 using AIRagAPI.Services.Vector;
 using Microsoft.Extensions.AI;
 using Microsoft.SemanticKernel;
-using Microsoft.SemanticKernel.Embeddings;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -46,6 +45,10 @@ builder.Services.AddSingleton<IVectorService, VectorService>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddControllers();
+
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole();
+builder.Logging.SetMinimumLevel(LogLevel.Information);
 
 
 builder.Services.AddCors(options =>

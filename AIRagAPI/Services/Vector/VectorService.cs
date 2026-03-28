@@ -9,7 +9,7 @@ public class VectorService : IVectorService
     private readonly ILogger<VectorService> _logger;
     private readonly QdrantClient _qdrant;
     private readonly IEmbeddingGenerator<string, Embedding<float>> _embeddingGenerator;
-    private const string CollectionName = "documents_gemini_1024";
+    private const string CollectionName = "documents_gemini_3072";
 
     public VectorService(
         IConfiguration config,
@@ -107,7 +107,7 @@ public class VectorService : IVectorService
 
     private async Task EnsureCollectionExists()
     {
-        const ulong expectedDimension = 1024; // Gemini embedding size
+        const ulong expectedDimension = 3072; // Gemini model embedding size
         bool exists = await _qdrant.CollectionExistsAsync(CollectionName);
         if (!exists)
         {
