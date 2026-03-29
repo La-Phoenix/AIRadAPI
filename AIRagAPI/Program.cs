@@ -14,8 +14,8 @@ builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
 //For only production
-if (!builder.Environment.IsDevelopment())
-    builder.WebHost.UseUrls("http://+:8080");
+// if (!builder.Environment.IsDevelopment())
+//     builder.WebHost.UseUrls("http://+:8080");
 
 builder.Services.AddOpenApi();
 
