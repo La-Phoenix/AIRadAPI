@@ -129,7 +129,7 @@ app.UseExceptionHandler();
 // {
 //     app.UseHttpsRedirection();
 // }
-app.UseHttpsRedirection();
+// app.UseHttpsRedirection();
 app.UseForwardedHeaders(new ForwardedHeadersOptions
 {
     ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
