@@ -14,7 +14,12 @@ public class AuthController (IAuthService authService, IConfiguration config, IL
     [HttpGet("google")]
     public IActionResult LoginWithGoogle()
     {
-        var redirectUrl = Url.Action("GoogleCallback");
+        var redirectUrl = Url.Action(
+            "GoogleCallback",
+            "Auth",
+            values: null,
+            protocol: "https" // Forces HTTPS
+        );
         var properties = new AuthenticationProperties
         {
             RedirectUri = redirectUrl
