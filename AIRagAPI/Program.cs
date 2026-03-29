@@ -4,6 +4,7 @@ using AIRagAPI.Extensions;
 using AIRagAPI.Generators;
 using AIRagAPI.Services.Vector;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
 using Microsoft.SemanticKernel;
@@ -129,7 +130,10 @@ app.UseExceptionHandler();
 //     app.UseHttpsRedirection();
 // }
 app.UseHttpsRedirection();
-
+app.UseForwardedHeaders(new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+});
 app.UseCors("AllowFrontend");
 app.UseAuthentication();
 app.UseAuthorization();
