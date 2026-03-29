@@ -124,10 +124,11 @@ app.UseSwagger();
 app.UseSwaggerUI();
 app.UseExceptionHandler();
 
-if (!app.Environment.IsEnvironment("Docker"))
-{
-    app.UseHttpsRedirection();
-}
+// if (!app.Environment.IsEnvironment("Docker"))
+// {
+//     app.UseHttpsRedirection();
+// }
+app.UseHttpsRedirection();
 
 app.UseCors("AllowFrontend");
 app.UseAuthentication();
