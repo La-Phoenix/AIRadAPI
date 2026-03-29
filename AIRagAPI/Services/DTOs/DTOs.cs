@@ -25,3 +25,11 @@ public record ChatResponse
     public required string Question { get; init; }
     public required string Message { get; init; }
 }
+
+public record UserResponse
+{
+    public required string Id { get; init; }
+    public required string Name { get; init; }
+    public required string Email { get; init; }
+    public string? PictureUrl { get; init; }
+}
