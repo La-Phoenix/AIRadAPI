@@ -57,6 +57,16 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection"));
 });
 
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders =
+        ForwardedHeaders.XForwardedFor |
+        ForwardedHeaders.XForwardedProto;
+
+    options.KnownNetworks.Clear();
+    options.KnownProxies.Clear();
+});
+
 // Configure Auth
 // Authentication
 builder.Services.AddAuthentication(options =>
@@ -155,11 +165,8 @@ builder.Services.AddCors(options =>
 builder.Services.AddHealthChecks();
 var app = builder.Build();
 
-// Should be first middelware?
-app.UseForwardedHeaders(new ForwardedHeadersOptions
-{
-    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
-});
+// Should be first middelware
+app.UseForwardedHeaders();
 
 app.UseSwagger();
 app.UseSwaggerUI();
