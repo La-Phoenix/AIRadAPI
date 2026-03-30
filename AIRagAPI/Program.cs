@@ -1,9 +1,11 @@
+using System.Security.Claims;
 using AIRagAPI.Domain.Persistence;
 using AIRagAPI.Exceptions;
 using AIRagAPI.Extensions;
 using AIRagAPI.Generators;
 using AIRagAPI.Services.Vector;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
@@ -13,6 +15,14 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+
+var keysDir = "/persisted_keys"; // mount this folder as a persistent volume in Render
+Directory.CreateDirectory(keysDir);
+
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo(keysDir))
+    .SetApplicationName("AIRagAPI")
+    .SetDefaultKeyLifetime(TimeSpan.FromDays(90));
 
 //For only production
 // if (!builder.Environment.IsDevelopment())
@@ -72,7 +82,9 @@ builder.Services.AddAuthentication(options =>
     options.Cookie.IsEssential = true;
 
     options.Cookie.SameSite = SameSiteMode.None;
-    options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+    options.Cookie.SecurePolicy = builder.Environment.IsProduction()
+        ? CookieSecurePolicy.Always
+        : CookieSecurePolicy.SameAsRequest;
 
     options.Events.OnRedirectToLogin = context =>
     {
@@ -89,7 +101,26 @@ builder.Services.AddAuthentication(options =>
     options.ClaimActions.MapJsonKey("picture", "picture", "url");
 
     options.CorrelationCookie.SameSite = SameSiteMode.None;
-    options.CorrelationCookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+    options.CorrelationCookie.SecurePolicy = builder.Environment.IsProduction()
+        ? CookieSecurePolicy.Always
+        : CookieSecurePolicy.SameAsRequest;
+    options.CorrelationCookie.HttpOnly = true;
+    options.CorrelationCookie.IsEssential = true;
+    
+    options.Events.OnCreatingTicket = async context =>
+    {
+        var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<Program>>();
+        var email = context.Principal?.FindFirst(ClaimTypes.Email)?.Value ??
+                    context.Principal?.FindFirst("email")?.Value ?? "Unknown";
+        logger.LogInformation("Google OAuth successful for user: {Email}", email);
+    };
+
+    options.Events.OnRemoteFailure = async context =>
+    {
+        var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<Program>>();
+        logger.LogError("Google OAuth failed: {Error} - {ErrorDescription}",
+            context.Failure?.Message, context.Failure?.InnerException?.Message);
+    };
 });
 
 //Register Application Services
@@ -117,6 +148,12 @@ builder.Services.AddCors(options =>
 builder.Services.AddHealthChecks();
 var app = builder.Build();
 
+// Should be first middelware?
+app.UseForwardedHeaders(new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+});
+
 app.UseSwagger();
 app.UseSwaggerUI();
 app.UseExceptionHandler();
@@ -126,10 +163,6 @@ app.UseExceptionHandler();
 //     app.UseHttpsRedirection();
 // }
 // app.UseHttpsRedirection();
-app.UseForwardedHeaders(new ForwardedHeadersOptions
-{
-    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
-});
 app.UseCors("AllowFrontend");
 app.UseAuthentication();
 app.UseAuthorization();
