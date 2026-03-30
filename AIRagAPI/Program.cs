@@ -69,7 +69,11 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 // Authentication
 builder.Services.AddAuthentication(options =>
 {
-    options.DefaultScheme = "Cookies";
+    // options.DefaultScheme = "Cookies";
+    // options.DefaultChallengeScheme = "Google";
+    
+    options.DefaultAuthenticateScheme = "Cookies";
+    options.DefaultSignInScheme = "Cookies";
     options.DefaultChallengeScheme = "Google";
 })
 .AddCookie("Cookies", options =>
@@ -94,6 +98,7 @@ builder.Services.AddAuthentication(options =>
 })
 .AddGoogle("Google", options =>
 {
+    options.SignInScheme = "Cookies";
     options.ClientId = builder.Configuration["Google:ClientId"]!;
     options.ClientSecret = builder.Configuration["Google:ClientSecret"]!;
     options.CallbackPath = "/api/auth/google/callback";
@@ -115,11 +120,16 @@ builder.Services.AddAuthentication(options =>
         logger.LogInformation("Google OAuth successful for user: {Email}", email);
     };
 
-    options.Events.OnRemoteFailure = async context =>
+    options.Events.OnRemoteFailure = context =>
     {
         var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<Program>>();
-        logger.LogError("Google OAuth failed: {Error} - {ErrorDescription}",
-            context.Failure?.Message, context.Failure?.InnerException?.Message);
+
+        logger.LogError("Google OAuth failed: {Error}", context.Failure?.Message);
+
+        context.Response.StatusCode = 500;
+        context.HandleResponse(); // prevents crash
+
+        return Task.CompletedTask;
     };
 });
 
