@@ -98,7 +98,6 @@ builder.Services.AddAuthentication(options =>
 //Register Application Services
 builder.Services.AddApplicationServices();
 
-builder.Services.AddApplicationServices();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddControllers();

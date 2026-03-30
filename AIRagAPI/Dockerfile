@@ -2,9 +2,14 @@
 FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 WORKDIR /app
 
-# Copy everything and restore + publish
-COPY . ./
+# Copy csproj and restore first (caches layers if only code changes)
+COPY *.csproj ./
 RUN dotnet restore
+
+# Copy all other files
+COPY . ./
+
+# Publish app
 RUN dotnet publish -c Release -o /out
 
 # Runtime stage
@@ -18,8 +23,8 @@ COPY --from=build /out .
 ENV ASPNETCORE_ENVIRONMENT=Production
 ENV ASPNETCORE_URLS=http://+:8080
 
-# Expose backend port
+# Expose port
 EXPOSE 8080
 
-# Start backend
+# Start app
 ENTRYPOINT ["dotnet", "AIRagAPI.dll"]
