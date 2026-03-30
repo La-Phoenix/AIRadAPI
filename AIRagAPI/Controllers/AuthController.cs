@@ -32,7 +32,8 @@ public class AuthController (IAuthService authService, IConfiguration config, IL
     {
         try
         {
-            var result = await HttpContext.AuthenticateAsync("Cookies");
+            // Read external cookie on redirect
+            var result = await HttpContext.AuthenticateAsync("External");
             if (!result.Succeeded)
                 return Unauthorized();
         
@@ -51,7 +52,11 @@ public class AuthController (IAuthService authService, IConfiguration config, IL
                 return BadRequest(resp);
             }
         
+            // Validate user and create app cookie
             await authService.ValidateUserAsync(email, name, picture);
+            
+            // Clear external cookie
+            await HttpContext.SignOutAsync("External");
             return Redirect(FrontendUrl());
         }
         catch (Exception ex)

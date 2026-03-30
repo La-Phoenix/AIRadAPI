@@ -16,14 +16,6 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
-var keysDir = "/persisted_keys"; // mount this folder as a persistent volume in Render
-Directory.CreateDirectory(keysDir);
-
-builder.Services.AddDataProtection()
-    .PersistKeysToFileSystem(new DirectoryInfo(keysDir))
-    .SetApplicationName("AIRagAPI")
-    .SetDefaultKeyLifetime(TimeSpan.FromDays(90));
-
 //For only production
 // if (!builder.Environment.IsDevelopment())
 //     builder.WebHost.UseUrls("http://+:8080");
@@ -69,13 +61,11 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 // Authentication
 builder.Services.AddAuthentication(options =>
 {
-    // options.DefaultScheme = "Cookies";
-    // options.DefaultChallengeScheme = "Google";
-    
     options.DefaultAuthenticateScheme = "Cookies";
     options.DefaultSignInScheme = "Cookies";
     options.DefaultChallengeScheme = "Google";
 })
+
 .AddCookie("Cookies", options =>
 {
     options.ExpireTimeSpan = TimeSpan.FromDays(7);
@@ -96,12 +86,31 @@ builder.Services.AddAuthentication(options =>
         return Task.CompletedTask;
     };
 })
+
+/* 🔥 ADD THIS (VERY IMPORTANT) */
+.AddCookie("External", options =>
+{
+    options.Cookie.Name = "external_auth";
+    options.Cookie.HttpOnly = true;
+    options.Cookie.IsEssential = true;
+
+    options.Cookie.SameSite = SameSiteMode.None;
+    options.Cookie.SecurePolicy = builder.Environment.IsProduction()
+        ? CookieSecurePolicy.Always
+        : CookieSecurePolicy.SameAsRequest;
+
+    options.ExpireTimeSpan = TimeSpan.FromMinutes(15);
+})
+
 .AddGoogle("Google", options =>
 {
-    options.SignInScheme = "Cookies";
+    /* 🔥 THIS IS THE FIX */
+    options.SignInScheme = "External";
+
     options.ClientId = builder.Configuration["Google:ClientId"]!;
     options.ClientSecret = builder.Configuration["Google:ClientSecret"]!;
     options.CallbackPath = "/api/auth/google/callback";
+
     options.SaveTokens = true;
     options.ClaimActions.MapJsonKey("picture", "picture", "url");
 
@@ -109,26 +118,14 @@ builder.Services.AddAuthentication(options =>
     options.CorrelationCookie.SecurePolicy = builder.Environment.IsProduction()
         ? CookieSecurePolicy.Always
         : CookieSecurePolicy.SameAsRequest;
-    options.CorrelationCookie.HttpOnly = true;
-    options.CorrelationCookie.IsEssential = true;
-    
-    options.Events.OnCreatingTicket = async context =>
-    {
-        var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<Program>>();
-        var email = context.Principal?.FindFirst(ClaimTypes.Email)?.Value ??
-                    context.Principal?.FindFirst("email")?.Value ?? "Unknown";
-        logger.LogInformation("Google OAuth successful for user: {Email}", email);
-    };
 
     options.Events.OnRemoteFailure = context =>
     {
         var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<Program>>();
-
         logger.LogError("Google OAuth failed: {Error}", context.Failure?.Message);
 
+        context.HandleResponse();
         context.Response.StatusCode = 500;
-        context.HandleResponse(); // prevents crash
-
         return Task.CompletedTask;
     };
 });
