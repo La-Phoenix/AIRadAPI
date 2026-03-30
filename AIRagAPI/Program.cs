@@ -20,6 +20,11 @@ builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
 builder.Services.AddOpenApi();
 
+builder.WebHost.ConfigureKestrel((context, options) =>
+{
+    options.AddServerHeader = false;
+});
+
 // Add Semantic Kernel
 builder.Services.AddSingleton(sp =>
 {
@@ -66,12 +71,8 @@ builder.Services.AddAuthentication(options =>
     options.Cookie.HttpOnly = true;
     options.Cookie.IsEssential = true;
 
-    // var isDev = builder.Environment.IsDevelopment();
-    // options.Cookie.SameSite = isDev ? SameSiteMode.Lax : SameSiteMode.None;
-    // options.Cookie.SecurePolicy = isDev ? CookieSecurePolicy.SameAsRequest : CookieSecurePolicy.Always;
-    
     options.Cookie.SameSite = SameSiteMode.None;
-    options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+    options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
 
     options.Events.OnRedirectToLogin = context =>
     {
@@ -87,12 +88,8 @@ builder.Services.AddAuthentication(options =>
     options.SaveTokens = true;
     options.ClaimActions.MapJsonKey("picture", "picture", "url");
 
-    // var isDev = builder.Environment.IsDevelopment();
-    // options.CorrelationCookie.SameSite = isDev ? SameSiteMode.Lax : SameSiteMode.None;
-    // options.CorrelationCookie.SecurePolicy = isDev ? CookieSecurePolicy.SameAsRequest : CookieSecurePolicy.Always;
-    
     options.CorrelationCookie.SameSite = SameSiteMode.None;
-    options.CorrelationCookie.SecurePolicy = CookieSecurePolicy.Always;
+    options.CorrelationCookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
 });
 
 //Register Application Services
