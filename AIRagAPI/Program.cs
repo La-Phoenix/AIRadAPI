@@ -124,10 +124,10 @@ builder.Services.AddAuthentication(options =>
     options.SaveTokens = true;
     options.ClaimActions.MapJsonKey("picture", "picture", "url");
 
-    options.CorrelationCookie.SameSite = SameSiteMode.None;
+    options.CorrelationCookie.SameSite = SameSiteMode.Lax;
     options.CorrelationCookie.SecurePolicy = builder.Environment.IsProduction()
-        ? CookieSecurePolicy.Always
-        : CookieSecurePolicy.SameAsRequest;
+        ? CookieSecurePolicy.None
+        : CookieSecurePolicy.None;
 
     options.Events.OnRemoteFailure = context =>
     {
