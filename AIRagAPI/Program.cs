@@ -125,6 +125,12 @@ builder.Services.AddAuthentication(options =>
     options.CorrelationCookie.SecurePolicy = builder.Environment.IsProduction()
         ? CookieSecurePolicy.Always
         : CookieSecurePolicy.SameAsRequest;
+    
+    options.Events.OnRedirectToAuthorizationEndpoint = context =>
+    {
+        Console.WriteLine("Redirecting to: " + context.RedirectUri);
+        return Task.CompletedTask;
+    };
 
     options.Events.OnRemoteFailure = context =>
     {
