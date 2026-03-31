@@ -66,23 +66,30 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
 });
 
 // Configure data protection
-var dataProtectionBuilder = builder.Services.AddDataProtection().SetApplicationName("LittlePhoenix");
+// var dataProtectionBuilder = builder.Services.AddDataProtection().SetApplicationName("LittlePhoenix");
 
-if (builder.Environment.IsProduction())
-{
-    var keysDir = Path.Combine(Path.GetTempPath(), "littlephoenix-keys");
-    
-    Directory.CreateDirectory(keysDir);
-    dataProtectionBuilder.PersistKeysToFileSystem(new DirectoryInfo(keysDir)).
-        SetDefaultKeyLifetime(TimeSpan.FromDays(90));
-}
-else
-{
-    var keysDir = Path.Combine(Directory.GetCurrentDirectory(), "keys");
-    Directory.CreateDirectory(keysDir);
-    dataProtectionBuilder.PersistKeysToFileSystem(new DirectoryInfo(keysDir)).
-        SetDefaultKeyLifetime(TimeSpan.FromDays(30));
-}
+// if (builder.Environment.IsProduction())
+// {
+//     var keysDir = Path.Combine(Path.GetTempPath(), "littlephoenix-keys");
+//     
+//     Directory.CreateDirectory(keysDir);
+//     dataProtectionBuilder.PersistKeysToFileSystem(new DirectoryInfo(keysDir)).
+//         SetDefaultKeyLifetime(TimeSpan.FromDays(90));
+// }
+// else
+// {
+//     var keysDir = Path.Combine(Directory.GetCurrentDirectory(), "keys");
+//     Directory.CreateDirectory(keysDir);
+//     dataProtectionBuilder.PersistKeysToFileSystem(new DirectoryInfo(keysDir)).
+//         SetDefaultKeyLifetime(TimeSpan.FromDays(30));
+// }
+
+builder.Services
+    .AddDataProtection()
+    .SetApplicationName("LittlePhoenix")
+    .PersistKeysToDbContext<AppDbContext>()
+    .SetDefaultKeyLifetime(TimeSpan.FromDays(90));
+// Remove the if/else for file system — no longer needed
 
 // Configure Auth
 builder.Services.AddAuthentication(options =>
