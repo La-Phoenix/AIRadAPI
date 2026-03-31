@@ -16,25 +16,21 @@ public class AuthController (IAuthService authService, IConfiguration config, IL
     [HttpGet("google")]
     public async Task LoginWithGoogle()
     {
-        
+        var redirectUri = Url.Action(
+            action: "GoogleCallback",
+            controller: "Auth",
+            values: null,
+            protocol: Request.Scheme,   // picks up https via forwarded headers
+            host: Request.Host.Value
+        );
+
         await HttpContext.ChallengeAsync(GoogleDefaults.AuthenticationScheme,
             new AuthenticationProperties
             {
-                RedirectUri = Url.Action("GoogleCallback")
+                RedirectUri = redirectUri
             });
-        // var redirectUrl = Url.Action(
-        //     "GoogleCallback",
-        //     "Auth",
-        //     values: null,
-        //     protocol: "https" // Forces HTTPS
-        // );
-        // var properties = new AuthenticationProperties
-        // {
-        //     RedirectUri = redirectUrl
-        // };
-        // return Challenge(properties, "Google");
     }
-
+    
     [HttpGet("google/callback")]
     public async Task<IActionResult> GoogleCallback(CancellationToken cancellationToken)
     {
@@ -55,7 +51,7 @@ public class AuthController (IAuthService authService, IConfiguration config, IL
             // Using app cookie since middleware already signed in user -> i.e DefaultSignInScheme
             if ( User.Identity is not { IsAuthenticated: true })
             {
-                return Unauthorized(unAuthResp);
+                return Redirect($"{FrontendUrl()}/login?error=auth_failed");
             }
         
             var email = User.FindFirstValue(ClaimTypes.Email);
@@ -70,7 +66,7 @@ public class AuthController (IAuthService authService, IConfiguration config, IL
                     Data = null,
                     IsSuccess = false
                 };
-                return BadRequest(resp);
+                return Redirect($"{FrontendUrl()}/login?error=auth_failed");
             }
         
             // Validate user and create app cookie
@@ -87,7 +83,7 @@ public class AuthController (IAuthService authService, IConfiguration config, IL
                 Data = null,
                 IsSuccess = false
             };
-            return StatusCode(500, resp);
+            return Redirect($"{FrontendUrl()}/login?error=server_error");
         }
     }
 

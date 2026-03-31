@@ -145,7 +145,7 @@ builder.Services.AddAuthentication(options =>
         logger.LogError("Google OAuth failed: {Error}", context.Failure?.Message);
 
         context.HandleResponse();
-        context.Response.StatusCode = 500;
+        context.Response.Redirect($"{builder.Configuration["Frontend:BaseUrl"]}/login?error=oauth_failed");
         return Task.CompletedTask;
     };
 });
