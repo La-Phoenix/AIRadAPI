@@ -165,6 +165,15 @@ var app = builder.Build();
 // Should be first middelware
 app.UseForwardedHeaders();
 
+app.Use(async (context, next) =>
+{
+    var logger = context.RequestServices.GetRequiredService<ILogger<Program>>();
+    logger.LogInformation("Scheme: {Scheme}, RemoteIp: {Ip}",
+        context.Request.Scheme,
+        context.Connection.RemoteIpAddress);
+    await next();
+});
+
 app.UseSwagger();
 app.UseSwaggerUI();
 app.UseExceptionHandler();
