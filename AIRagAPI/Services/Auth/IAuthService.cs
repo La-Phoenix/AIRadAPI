@@ -11,8 +11,9 @@ public interface IAuthService
     /// <param name="email"></param>
     /// <param name="name"></param>
     /// <param name="picture"></param>
+    /// <param name="cancellationToken"></param>
     /// <exception cref="Exception"></exception>
-    public Task ValidateUserAsync(string email, string? name, string? picture);
+    public Task ValidateUserAsync(string email, string? name, string? picture, CancellationToken cancellationToken);
     
     public Task<User?> FindUserAsync(string email);
     

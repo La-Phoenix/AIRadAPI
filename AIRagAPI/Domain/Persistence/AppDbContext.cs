@@ -36,6 +36,8 @@ public class AppDbContext: DbContext
         modelBuilder.Entity<User>()
             .Property(u => u.Name).HasMaxLength(50).IsRequired();
         modelBuilder.Entity<User>()
+            .Property(u => u.Role).HasConversion<string>();
+        modelBuilder.Entity<User>()
             .Property(u => u.PictureUrl).HasMaxLength(500);
         modelBuilder.Entity<User>()
             .HasMany(u => u.Conversations)

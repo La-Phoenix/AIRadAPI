@@ -1,14 +1,13 @@
-using System.Security.Claims;
 using AIRagAPI.Domain.Persistence;
 using AIRagAPI.Exceptions;
 using AIRagAPI.Extensions;
 using AIRagAPI.Generators;
-using AIRagAPI.Services.Vector;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.Google;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.AI;
 using Microsoft.SemanticKernel;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -57,66 +56,64 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection"));
 });
 
+
+// Configure header for Render deployment
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
-    options.ForwardedHeaders =
-        ForwardedHeaders.XForwardedFor |
-        ForwardedHeaders.XForwardedProto;
-
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
     options.KnownNetworks.Clear();
     options.KnownProxies.Clear();
 });
 
+// Configure data protection
+var dataProtectionBuilder = builder.Services.AddDataProtection().SetApplicationName("LittlePhoenix");
+
+if (builder.Environment.IsProduction())
+{
+    var keysDir = Path.Combine(Path.GetTempPath(), "littlephoenix-keys");
+    
+    Directory.CreateDirectory(keysDir);
+    dataProtectionBuilder.PersistKeysToFileSystem(new DirectoryInfo(keysDir)).
+        SetDefaultKeyLifetime(TimeSpan.FromDays(90));
+}
+else
+{
+    var keysDir = Path.Combine(Directory.GetCurrentDirectory(), "keys");
+    Directory.CreateDirectory(keysDir);
+    dataProtectionBuilder.PersistKeysToFileSystem(new DirectoryInfo(keysDir)).
+        SetDefaultKeyLifetime(TimeSpan.FromDays(30));
+}
+
 // Configure Auth
-// Authentication
 builder.Services.AddAuthentication(options =>
 {
-    options.DefaultAuthenticateScheme = "Cookies";
-    options.DefaultSignInScheme = "Cookies";
-    options.DefaultChallengeScheme = "Google";
-})
-
-.AddCookie("Cookies", options =>
+    // Check if user is authenticated by looking for a cookie
+    options.DefaultAuthenticateScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+    
+    // When user hits a [Authorize] protected page, redirect them to google login
+    options.DefaultChallengeScheme = GoogleDefaults.AuthenticationScheme;
+    
+    // Store user's identity here after successful sign in
+    options.DefaultSignInScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+    
+}) 
+.AddCookie(options =>
 {
     options.ExpireTimeSpan = TimeSpan.FromDays(7);
     options.SlidingExpiration = true;
 
-    options.Cookie.Name = "littlephoenix_auth";
+    options.Cookie.Name = "littlephoenix_auth"; // App Auth cookie name
     options.Cookie.HttpOnly = true;
     options.Cookie.IsEssential = true;
 
-    options.Cookie.SameSite = SameSiteMode.None;
+    options.Cookie.SameSite = SameSiteMode.Lax;
     options.Cookie.SecurePolicy = builder.Environment.IsProduction()
         ? CookieSecurePolicy.Always
         : CookieSecurePolicy.SameAsRequest;
-
-    options.Events.OnRedirectToLogin = context =>
-    {
-        context.Response.StatusCode = 401;
-        return Task.CompletedTask;
-    };
 })
-
-/* 🔥 ADD THIS (VERY IMPORTANT) */
-.AddCookie("External", options =>
+.AddGoogle(GoogleDefaults.AuthenticationScheme, options =>
 {
-    options.Cookie.Name = "external_auth";
-    options.Cookie.HttpOnly = true;
-    options.Cookie.IsEssential = true;
-
-    options.Cookie.SameSite = SameSiteMode.None;
-    options.Cookie.SecurePolicy = builder.Environment.IsProduction()
-        ? CookieSecurePolicy.Always
-        : CookieSecurePolicy.SameAsRequest;
-
-    options.ExpireTimeSpan = TimeSpan.FromMinutes(15);
-})
-
-.AddGoogle("Google", options =>
-{
-    /* 🔥 THIS IS THE FIX */
-    options.SignInScheme = "External";
-
+    options.SignInScheme = CookieAuthenticationDefaults.AuthenticationScheme;
     options.ClientId = builder.Configuration["Google:ClientId"]!;
     options.ClientSecret = builder.Configuration["Google:ClientSecret"]!;
     options.CallbackPath = "/api/auth/google/callback";
@@ -126,8 +123,8 @@ builder.Services.AddAuthentication(options =>
 
     options.CorrelationCookie.SameSite = SameSiteMode.Lax;
     options.CorrelationCookie.SecurePolicy = builder.Environment.IsProduction()
-        ? CookieSecurePolicy.None
-        : CookieSecurePolicy.None;
+        ? CookieSecurePolicy.Always
+        : CookieSecurePolicy.SameAsRequest;
 
     options.Events.OnRemoteFailure = context =>
     {
@@ -193,6 +190,18 @@ if (app.Environment.IsProduction())
 // }
 // app.UseHttpsRedirection();
 app.UseCors("AllowFrontend");
+app.Use(async (context, next) =>
+{
+    var logger = context.RequestServices.GetRequiredService<ILogger<Program>>();
+    logger.LogInformation("Request: {Method} {Path}", context.Request.Method, context.Request.Path);
+
+    if (context.Request.Headers.TryGetValue("Cookie", out var cookie))
+        logger.LogInformation("Cookies: {Cookies}", cookie.ToString());
+    else
+        logger.LogInformation("No cookies sent");
+
+    await next();
+});
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();

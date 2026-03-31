@@ -3,6 +3,8 @@ using AIRagAPI.Services.Auth;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Mvc;
 using AIRagAPI.Services.DTOs;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.Google;
 
 namespace AIRagAPI.Controllers;
 [ApiController]
@@ -12,36 +14,55 @@ public class AuthController (IAuthService authService, IConfiguration config, IL
     private string FrontendUrl() => config["Frontend:BaseUrl"]!;
     
     [HttpGet("google")]
-    public IActionResult LoginWithGoogle()
+    public async Task LoginWithGoogle()
     {
-        var redirectUrl = Url.Action(
-            "GoogleCallback",
-            "Auth",
-            values: null,
-            protocol: "https" // Forces HTTPS
-        );
-        var properties = new AuthenticationProperties
-        {
-            RedirectUri = redirectUrl
-        };
-        return Challenge(properties, "Google");
+        
+        await HttpContext.ChallengeAsync(GoogleDefaults.AuthenticationScheme,
+            new AuthenticationProperties
+            {
+                RedirectUri = Url.Action("GoogleCallback")
+            });
+        // var redirectUrl = Url.Action(
+        //     "GoogleCallback",
+        //     "Auth",
+        //     values: null,
+        //     protocol: "https" // Forces HTTPS
+        // );
+        // var properties = new AuthenticationProperties
+        // {
+        //     RedirectUri = redirectUrl
+        // };
+        // return Challenge(properties, "Google");
     }
 
     [HttpGet("google/callback")]
-    public async Task<IActionResult> GoogleCallback()
+    public async Task<IActionResult> GoogleCallback(CancellationToken cancellationToken)
     {
         try
         {
             // Read external cookie on redirect
-            var result = await HttpContext.AuthenticateAsync("External");
-            if (!result.Succeeded)
-                return Unauthorized();
-        
-            var email = result.Principal.FindFirst(ClaimTypes.Email)?.Value;
-            var name = result.Principal.FindFirst(ClaimTypes.Name)?.Value;
-            var picture = result.Principal.FindFirst("picture")?.Value;
+            // var result = await HttpContext.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+            // if (!result.Succeeded)
+            //     return Unauthorized();
 
-            if (email == null)
+            var unAuthResp = new Response<string>()
+            {
+                Message = "Google Auth Failed",
+                Data = null,
+                IsSuccess = false
+            };
+            
+            // Using app cookie since middleware already signed in user -> i.e DefaultSignInScheme
+            if ( User.Identity is not { IsAuthenticated: true })
+            {
+                return Unauthorized(unAuthResp);
+            }
+        
+            var email = User.FindFirstValue(ClaimTypes.Email);
+            var name = User.FindFirstValue(ClaimTypes.Name);
+            var picture = User.FindFirstValue("picture");
+
+            if (string.IsNullOrEmpty(email))
             {
                 var resp = new Response<string>
                 {
@@ -53,10 +74,8 @@ public class AuthController (IAuthService authService, IConfiguration config, IL
             }
         
             // Validate user and create app cookie
-            await authService.ValidateUserAsync(email, name, picture);
+            await authService.ValidateUserAsync(email, name, picture,  cancellationToken); 
             
-            // Clear external cookie
-            await HttpContext.SignOutAsync("External");
             return Redirect(FrontendUrl());
         }
         catch (Exception ex)
