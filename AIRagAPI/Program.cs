@@ -121,7 +121,7 @@ builder.Services.AddAuthentication(options =>
     options.SaveTokens = true;
     options.ClaimActions.MapJsonKey("picture", "picture", "url");
 
-    options.CorrelationCookie.SameSite = SameSiteMode.Lax;
+    options.CorrelationCookie.SameSite = SameSiteMode.None;
     options.CorrelationCookie.SecurePolicy = builder.Environment.IsProduction()
         ? CookieSecurePolicy.Always
         : CookieSecurePolicy.SameAsRequest;
