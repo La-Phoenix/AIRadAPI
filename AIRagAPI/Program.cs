@@ -2,6 +2,8 @@ using AIRagAPI.Domain.Persistence;
 using AIRagAPI.Exceptions;
 using AIRagAPI.Extensions;
 using AIRagAPI.Generators;
+using AIRagAPI.Services.Auth;
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.Google;
@@ -66,89 +68,129 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
 });
 
 // Configure data protection
-// var dataProtectionBuilder = builder.Services.AddDataProtection().SetApplicationName("LittlePhoenix");
+var dpBuilder = builder.Services.AddDataProtection().SetApplicationName("LittlePhoenix");
 
-// if (builder.Environment.IsProduction())
-// {
-//     var keysDir = Path.Combine(Path.GetTempPath(), "littlephoenix-keys");
-//     
-//     Directory.CreateDirectory(keysDir);
-//     dataProtectionBuilder.PersistKeysToFileSystem(new DirectoryInfo(keysDir)).
-//         SetDefaultKeyLifetime(TimeSpan.FromDays(90));
-// }
-// else
-// {
-//     var keysDir = Path.Combine(Directory.GetCurrentDirectory(), "keys");
-//     Directory.CreateDirectory(keysDir);
-//     dataProtectionBuilder.PersistKeysToFileSystem(new DirectoryInfo(keysDir)).
-//         SetDefaultKeyLifetime(TimeSpan.FromDays(30));
-// }
-
-builder.Services
-    .AddDataProtection()
-    .SetApplicationName("LittlePhoenix")
-    .PersistKeysToDbContext<AppDbContext>()
-    .SetDefaultKeyLifetime(TimeSpan.FromDays(90));
-// Remove the if/else for file system — no longer needed
+if (builder.Environment.IsDevelopment())
+{
+    // Local dev: use file system to avoid DB init issues
+    var keysDir = Path.Combine(Directory.GetCurrentDirectory(), "keys");
+    Directory.CreateDirectory(keysDir);
+    dpBuilder.PersistKeysToFileSystem(new DirectoryInfo(keysDir))
+        .SetDefaultKeyLifetime(TimeSpan.FromDays(30));
+}
+else
+{
+    // Production: store encrypted keys in database
+    dpBuilder.PersistKeysToDbContext<AppDbContext>()
+        .SetDefaultKeyLifetime(TimeSpan.FromDays(90));
+}
 
 // Configure Auth
 builder.Services.AddAuthentication(options =>
-{
-    // Check if user is authenticated by looking for a cookie
-    options.DefaultAuthenticateScheme = CookieAuthenticationDefaults.AuthenticationScheme;
-    
-    // When user hits a [Authorize] protected page, redirect them to google login
-    options.DefaultChallengeScheme = GoogleDefaults.AuthenticationScheme;
-    
-    // Store user's identity here after successful sign in
-    options.DefaultSignInScheme = CookieAuthenticationDefaults.AuthenticationScheme;
-    
-}) 
-.AddCookie(options =>
-{
-    options.ExpireTimeSpan = TimeSpan.FromDays(7);
-    options.SlidingExpiration = true;
-
-    options.Cookie.Name = "littlephoenix_auth"; // App Auth cookie name
-    options.Cookie.HttpOnly = true;
-    options.Cookie.IsEssential = true;
-
-    options.Cookie.SameSite = SameSiteMode.None;
-    options.Cookie.SecurePolicy = builder.Environment.IsProduction()
-        ? CookieSecurePolicy.Always
-        : CookieSecurePolicy.SameAsRequest;
-})
-.AddGoogle(GoogleDefaults.AuthenticationScheme, options =>
-{
-    options.SignInScheme = CookieAuthenticationDefaults.AuthenticationScheme;
-    options.ClientId = builder.Configuration["Google:ClientId"]!;
-    options.ClientSecret = builder.Configuration["Google:ClientSecret"]!;
-    options.CallbackPath = "/api/auth/google/callback";
-
-    options.SaveTokens = true;
-    options.ClaimActions.MapJsonKey("picture", "picture", "url");
-
-    options.CorrelationCookie.SameSite = SameSiteMode.None;
-    options.CorrelationCookie.SecurePolicy = builder.Environment.IsProduction()
-        ? CookieSecurePolicy.Always
-        : CookieSecurePolicy.SameAsRequest;
-    
-    options.Events.OnRedirectToAuthorizationEndpoint = context =>
     {
-        Console.WriteLine("Redirecting to: " + context.RedirectUri);
-        return Task.CompletedTask;
-    };
-
-    options.Events.OnRemoteFailure = context =>
+        // Check app cookie to know if user is authenticated
+        options.DefaultAuthenticateScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+        // Store authenticated user in cookie after external login
+        options.DefaultSignInScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+        // Redirect to Google for authentication if not authenticated
+        options.DefaultChallengeScheme = GoogleDefaults.AuthenticationScheme;
+    })
+    .AddCookie(options =>
     {
-        var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<Program>>();
-        logger.LogError("Google OAuth failed: {Error}", context.Failure?.Message);
+        options.ExpireTimeSpan = TimeSpan.FromDays(7);
+        options.SlidingExpiration = true;
 
-        context.HandleResponse();
-        context.Response.Redirect($"{builder.Configuration["Frontend:BaseUrl"]}/login?error=oauth_failed");
-        return Task.CompletedTask;
-    };
-});
+        options.Cookie.Name = "littlephoenix_auth";
+        options.Cookie.HttpOnly = true;
+        options.Cookie.IsEssential = true;
+
+        // Using None to allow cross-origin requests 
+        options.Cookie.SameSite = SameSiteMode.None;
+        options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+    })
+    .AddGoogle(GoogleDefaults.AuthenticationScheme, options =>
+    {
+        options.ClientId = builder.Configuration["Google:ClientId"] ?? throw new InvalidOperationException("Google:ClientId not configured");
+        options.ClientSecret = builder.Configuration["Google:ClientSecret"] ?? throw new InvalidOperationException("Google:ClientSecret not configured");
+        
+        // Set explicit callback path
+        options.CallbackPath = new PathString("/api/auth/google/callback");
+        
+        // Store authenticated user in app's cookie (DefaultSignInScheme)
+        options.SignInScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+        
+        // Capture profile picture
+        options.ClaimActions.MapJsonKey("picture", "picture", "url");
+        options.SaveTokens = true;
+        
+        // Using None for cross-origin OAuth flow
+        options.CorrelationCookie.SameSite = SameSiteMode.None;
+        options.CorrelationCookie.SecurePolicy = CookieSecurePolicy.Always;
+        
+        // Log OAuth redirects for debugging
+        options.Events.OnRedirectToAuthorizationEndpoint = context =>
+        {
+            var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<Program>>();
+            logger.LogInformation("🔐 Redirecting to Google OAuth - State will be stored in correlation cookie");
+            context.Response.Redirect(context.RedirectUri);
+            return Task.CompletedTask;
+        };
+        
+        // Handle OAuth failures
+        options.Events.OnRemoteFailure = context =>
+        {
+            var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<Program>>();
+            logger.LogError("❌ Google OAuth failed: {Error}", context.Failure?.Message);
+            
+            // Log available cookies
+            var cookies = context.Request.Cookies.Keys.ToList();
+            logger.LogError("📍 Available cookies: {Cookies}", string.Join(", ", cookies));
+            
+            context.HandleResponse();
+            var frontendUrl = builder.Configuration["Frontend:BaseUrl"] ?? "http://localhost:5173";
+            context.Response.Redirect($"{frontendUrl}?error=oauth_failed");
+            return Task.CompletedTask;
+        };
+        
+        // Create/validate user in database after successful authentication
+        options.Events.OnTicketReceived = context =>
+        {
+            var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<Program>>();
+            
+            try
+            {
+                var email = context.Principal?.FindFirstValue(ClaimTypes.Email);
+                var name = context.Principal?.FindFirstValue(ClaimTypes.Name);
+                var picture = context.Principal?.FindFirstValue("picture");
+                
+                if (string.IsNullOrEmpty(email))
+                {
+                    logger.LogError("Email claim missing from Google response");
+                    context.HandleResponse();
+                    var frontendUrl = context.HttpContext.RequestServices.GetRequiredService<IConfiguration>()["Frontend:BaseUrl"] ?? "http://localhost:5173";
+                    context.Response.Redirect($"{frontendUrl}?error=missing_email");
+                    return Task.CompletedTask;
+                }
+                
+                logger.LogInformation("Creating or validating user: {Email}", email);
+                
+                // Create/validate user in database
+                var authService = context.HttpContext.RequestServices.GetRequiredService<IAuthService>();
+                authService.ValidateUserAsync(email, name, picture, CancellationToken.None).GetAwaiter().GetResult();
+                
+                logger.LogInformation("✅ User validated/created: {Email}", email);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Error creating user during OAuth");
+                context.HandleResponse();
+                var frontendUrl = context.HttpContext.RequestServices.GetRequiredService<IConfiguration>()["Frontend:BaseUrl"] ?? "http://localhost:5173";
+                context.Response.Redirect($"{frontendUrl}?error=server_error");
+            }
+            
+            return Task.CompletedTask;
+        };
+    });
 
 //Register Application Services
 builder.Services.AddApplicationServices();

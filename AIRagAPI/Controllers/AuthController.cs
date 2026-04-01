@@ -13,78 +13,24 @@ public class AuthController (IAuthService authService, IConfiguration config, IL
 {
     private string FrontendUrl() => config["Frontend:BaseUrl"]!;
     
-    [HttpGet("google")]
-    public async Task LoginWithGoogle()
+    /// <summary>
+    /// Frontend: window.location.href = "/api/auth/google/login"
+    /// Initiates Google OAuth flow. Middleware handles callback automatically.
+    /// </summary>
+    [HttpGet("google/login")]
+    public async Task<IActionResult> GoogleLogin()
     {
-        var redirectUri = Url.Action(
-            action: "GoogleCallback",
-            controller: "Auth",
-            values: null,
-            protocol: Request.Scheme,   // picks up https via forwarded headers
-            host: Request.Host.Value
-        );
-
-        await HttpContext.ChallengeAsync(GoogleDefaults.AuthenticationScheme,
-            new AuthenticationProperties
-            {
-                RedirectUri = redirectUri
-            });
-    }
-    
-    [HttpGet("google/callback")]
-    public async Task<IActionResult> GoogleCallback(CancellationToken cancellationToken)
-    {
-        try
-        {
-            // Read external cookie on redirect
-            // var result = await HttpContext.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-            // if (!result.Succeeded)
-            //     return Unauthorized();
-
-            var unAuthResp = new Response<string>()
-            {
-                Message = "Google Auth Failed",
-                Data = null,
-                IsSuccess = false
-            };
-            
-            // Using app cookie since middleware already signed in user -> i.e DefaultSignInScheme
-            if ( User.Identity is not { IsAuthenticated: true })
-            {
-                return Redirect($"{FrontendUrl()}/login?error=auth_failed");
-            }
+        logger.LogInformation("Google OAuth login initiated from {Host}", Request.Host);
         
-            var email = User.FindFirstValue(ClaimTypes.Email);
-            var name = User.FindFirstValue(ClaimTypes.Name);
-            var picture = User.FindFirstValue("picture");
-
-            if (string.IsNullOrEmpty(email))
-            {
-                var resp = new Response<string>
-                {
-                    Message = "Email not found.",
-                    Data = null,
-                    IsSuccess = false
-                };
-                return Redirect($"{FrontendUrl()}/login?error=auth_failed");
-            }
+        var frontendUrl = FrontendUrl();
         
-            // Validate user and create app cookie
-            await authService.ValidateUserAsync(email, name, picture,  cancellationToken); 
-            
-            return Redirect(FrontendUrl());
-        }
-        catch (Exception ex)
+        // After OAuth succeeds, redirect to frontend
+        await HttpContext.ChallengeAsync("Google", new AuthenticationProperties
         {
-            logger.LogError(ex, "An error occurred during authentication.");
-            var resp = new Response<string>()
-            {
-                Message = "An error occurred while authenticating your account.",
-                Data = null,
-                IsSuccess = false
-            };
-            return Redirect($"{FrontendUrl()}/login?error=server_error");
-        }
+            RedirectUri = frontendUrl // Redirect to frontend after successful auth
+        });
+        
+        return new EmptyResult();
     }
 
     [HttpPost("logout")]
