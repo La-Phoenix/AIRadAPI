@@ -28,9 +28,10 @@ public class ChatService: IChatService
 
     public async Task<ChatMessageResponse> SendMessage(Guid userId, string message)
     {
+        var user = await _db.Users.FindAsync(userId);
+        if (user == null) throw new Exception("User not found");
         // Get active conversation
         var conversation = await _db.Conversations
-            .Include(c => c.User)
             .Include(c => c.Messages)
             .FirstOrDefaultAsync(c => c.UserId == userId && c.IsActive);
         
@@ -57,7 +58,7 @@ public class ChatService: IChatService
             ConversationId = conversation.Id,
             Order = order,
             Content = message,
-            Role = MapToMessageRole(conversation.User.Role)
+            Role = MapToMessageRole(user.Role)
         };
         _db.Messages.Add(userMessage);
         conversation.MessageCount ++;
@@ -126,8 +127,14 @@ public class ChatService: IChatService
     public async Task<List<ChatMessageResponse>?> GetUserAllConversationMessages(Guid userId, Guid? conversationId)
     {
         var conversation = conversationId == null ? 
-            await _db.Conversations.AsNoTracking().FirstOrDefaultAsync(c => c.UserId == userId && c.IsActive) : 
-            await _db.Conversations.AsNoTracking().FirstOrDefaultAsync(c => c.Id == conversationId && c.UserId == userId);
+            await _db.Conversations
+                .AsNoTracking()
+                .Include(c => c.Messages)
+                .FirstOrDefaultAsync(c => c.UserId == userId && c.IsActive) : 
+            await _db.Conversations
+                .AsNoTracking()
+                .Include(c => c.Messages)
+                .FirstOrDefaultAsync(c => c.Id == conversationId && c.UserId == userId);
 
         if (conversation == null)
         {
