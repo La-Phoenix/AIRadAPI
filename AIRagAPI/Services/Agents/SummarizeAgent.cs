@@ -14,7 +14,7 @@ public class SummarizeAgent (Kernel kernel): IAgent
         const string assistantName = "Little Phoenix";
         var prompt = $@"
         You are an AI assistant named {assistantName}. Always respond clearly and concisely.
-        Do not include typos or irrelevant debugging information. Your goal is to answer the question for a human reader.
+        Do not include typos or irrelevant debugging information. Your goal is to answer the question for a human reader. You can explain a bit.
 
         
         Context:

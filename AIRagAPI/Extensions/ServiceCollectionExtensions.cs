@@ -1,5 +1,8 @@
+using AIRagAPI.Agents;
 using AIRagAPI.Generators;
+using AIRagAPI.Services.Agents;
 using AIRagAPI.Services.Auth;
+using AIRagAPI.Services.ChatService;
 using AIRagAPI.Services.Vector;
 using Microsoft.Extensions.AI;
 
@@ -12,7 +15,11 @@ public static class ServiceCollectionExtensions
         services.AddHttpContextAccessor();
         services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>>(sp => sp.GetRequiredService<GeminiEmbeddingGenerator>());
         services.AddSingleton<IVectorService, VectorService>();
-        services.AddScoped<IAuthService,  AuthService>(); // Since AuthService has a scope dependency - DbContext
+        services.AddScoped<AgentCoordinator>();
+        services.AddScoped<IAuthService, AuthService>(); // Since AuthService has a scope dependency - DbContext
+        services.AddScoped<IChatService, ChatService>();
+        services.AddScoped<IAgent, RetrieverAgent>();
+        services.AddScoped<IAgent, SummarizeAgent>();
         return services;
     }
 }

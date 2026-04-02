@@ -4,6 +4,7 @@ using AIRagAPI.Extensions;
 using AIRagAPI.Generators;
 using AIRagAPI.Services.Auth;
 using System.Security.Claims;
+using AIRagAPI.Common;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.Google;
@@ -27,6 +28,8 @@ builder.WebHost.ConfigureKestrel((context, options) =>
 {
     options.AddServerHeader = false;
 });
+
+builder.Services.Configure<ChatSettings>(builder.Configuration.GetSection("ChatSettings"));
 
 // Add Semantic Kernel
 builder.Services.AddSingleton(sp =>
@@ -144,7 +147,7 @@ builder.Services.AddAuthentication(options =>
             
             // Log available cookies
             var cookies = context.Request.Cookies.Keys.ToList();
-            logger.LogError("📍 Available cookies: {Cookies}", string.Join(", ", cookies));
+            // logger.LogError("📍 Available cookies: {Cookies}", string.Join(", ", cookies));
             
             context.HandleResponse();
             var frontendUrl = builder.Configuration["Frontend:BaseUrl"] ?? "http://localhost:5173";
@@ -152,7 +155,7 @@ builder.Services.AddAuthentication(options =>
             return Task.CompletedTask;
         };
         
-        // Create/validate user in database after successful authentication
+        // Create/validate user in database after successful authentication - Also oauth take claims principal and serializes into cookie
         options.Events.OnTicketReceived = context =>
         {
             var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<Program>>();
@@ -176,8 +179,9 @@ builder.Services.AddAuthentication(options =>
                 
                 // Create/validate user in database
                 var authService = context.HttpContext.RequestServices.GetRequiredService<IAuthService>();
-                authService.ValidateUserAsync(email, name, picture, CancellationToken.None).GetAwaiter().GetResult();
+                var claimsIdentity = authService.ValidateUserAsync(email, name, picture, CancellationToken.None).GetAwaiter().GetResult();
                 
+                context.Principal = claimsIdentity;
                 logger.LogInformation("✅ User validated/created: {Email}", email);
             }
             catch (Exception ex)
@@ -260,7 +264,8 @@ app.Use(async (context, next) =>
     logger.LogInformation("Request: {Method} {Path}", context.Request.Method, context.Request.Path);
 
     if (context.Request.Headers.TryGetValue("Cookie", out var cookie))
-        logger.LogInformation("Cookies: {Cookies}", cookie.ToString());
+        logger.LogInformation("Cookies: Cookie available");
+        // logger.LogInformation("Cookies: {Cookies}", cookie.ToString());
     else
         logger.LogInformation("No cookies sent");
 

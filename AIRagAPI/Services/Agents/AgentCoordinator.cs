@@ -2,13 +2,19 @@ using AIRagAPI.Agents;
 
 namespace AIRagAPI.Services.Agents;
 
-public class AgentCoordinator(List<IAgent> agents)
+public class AgentCoordinator
 {
+    private readonly List<IAgent> _agents;
+    public AgentCoordinator(IEnumerable<IAgent> agents)
+    {
+        _agents = agents.ToList();
+    }
+    // Runs Retrieval and Summarize agent. Uses Previous response to feed the later
     public async Task<string> AskAsync(string question)
     {
         List<string> context = new List<string>();
 
-        foreach (var agent in agents)
+        foreach (var agent in _agents)
         {
             var output = await agent.RunAsync(question, context);
             context.Add(output); // Each agent builds on previous context

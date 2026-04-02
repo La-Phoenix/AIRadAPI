@@ -1,12 +1,14 @@
 using System.ComponentModel.DataAnnotations;
 using AIRagAPI.Services.Vector;
 using AIRagAPI.Services.DTOs;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace AIRagAPI.Controllers;
 
 [ApiController]
 [Route("api/vector")]
+[Authorize]
 public class VectorController: ControllerBase
 {
     private readonly IVectorService _vectorService;

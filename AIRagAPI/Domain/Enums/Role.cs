@@ -6,3 +6,10 @@ public enum UserRole
     Admin = 2,
     Assistant = 3
 }
+
+public enum MessageRole
+{
+    User,
+    Assistant,
+    System
+}

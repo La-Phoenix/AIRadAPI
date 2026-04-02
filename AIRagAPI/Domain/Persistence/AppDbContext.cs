@@ -51,6 +51,8 @@ public class AppDbContext: DbContext, IDataProtectionKeyContext
         modelBuilder.Entity<Conversation>()
             .Property(c => c.Title).HasMaxLength(50).IsRequired();
         modelBuilder.Entity<Conversation>()
+            .Property(c => c.Summary).HasMaxLength(500);
+        modelBuilder.Entity<Conversation>()
             .HasMany(c => c.Messages)
             .WithOne(m => m.Conversation)
             .HasForeignKey(m => m.ConversationId)
@@ -59,6 +61,8 @@ public class AppDbContext: DbContext, IDataProtectionKeyContext
         // Messages
         modelBuilder.Entity<Message>()
             .Property(m => m.Content).HasMaxLength(500).IsRequired();
+        modelBuilder.Entity<Message>()
+            .HasIndex(m => new { m.ConversationId, m.Order});
         modelBuilder.Entity<Message>()
             .Property(m => m.Role).HasConversion<string>();
             

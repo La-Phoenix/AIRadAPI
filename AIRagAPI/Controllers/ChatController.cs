@@ -1,8 +1,12 @@
 
+using System.Security.Claims;
 using AIRagAPI.Agents;
 using AIRagAPI.Services.Agents;
+using AIRagAPI.Services.ChatService;
 using AIRagAPI.Services.DTOs;
 using AIRagAPI.Services.Vector;
+using Azure.Core;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.SemanticKernel;
 
@@ -10,15 +14,18 @@ namespace AIRagAPI.Controllers;
 
 [ApiController]
 [Route("api/chat")]
+[Authorize]
 public class ChatController: ControllerBase
 {
     private readonly Kernel _kernel;
     private readonly ILogger<ChatController> _logger;
     private readonly IVectorService _vectorService;
-    public ChatController(Kernel kernel, IVectorService vectorService, ILogger<ChatController> logger)
+    private readonly IChatService _chatService;
+    public ChatController(Kernel kernel, IVectorService vectorService, IChatService chatService, ILogger<ChatController> logger)
     {
         _kernel = kernel;
         _vectorService = vectorService;
+        _chatService = chatService;
         _logger = kernel.LoggerFactory.CreateLogger<ChatController>();
     }
 
@@ -30,24 +37,23 @@ public class ChatController: ControllerBase
     [HttpPost]
     public async Task<IActionResult> Ask([FromBody] ChatRequest request)
     {
+        var badResp = new Response<string>
+        {
+            Message = "",
+            Data = null,
+            IsSuccess = false
+        };
         try
         {
-            var agents = new List<IAgent>
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if(!Guid.TryParse(userId, out var userGuid))
             {
-                new RetrieverAgent(_vectorService),
-                new SummarizeAgent(_kernel)
-            };
-
-            var coordinator = new AgentCoordinator(agents);
-
-            var answer = await coordinator.AskAsync(request.Question);
-
-            var chatResponse = new ChatResponse
-            {
-                Question = request.Question,
-                Message = answer
-            };
-            var resp = new Response<ChatResponse>
+                badResp.Message = "Invalid user id";
+                return Unauthorized(badResp);
+            }
+            var chatResponse = await _chatService.SendMessage(userGuid, request.Question);
+           
+            var resp = new Response<ChatMessageResponse>
             {
                 Message = "Chat request successful.",
                 Data = chatResponse,
@@ -58,13 +64,106 @@ public class ChatController: ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "An error occured while asking for question");
-            var resp = new Response<string>
+            badResp.Message = "An error occured while asking for question";
+            return StatusCode(500, badResp);
+        }
+    }
+
+    [HttpGet("conversations/user")]
+    public async Task<IActionResult> GetAllUserConversations()
+    {
+        var badReq = new Response<string>()
+        {
+            Message = "",
+            Data = null,
+            IsSuccess = false
+        };
+        try
+        {
+            var userId = User.FindFirstValue( ClaimTypes.NameIdentifier);
+            if (userId == null)
             {
-                Message = "An error occured while asking for question.",
-                Data = null,
-                IsSuccess = false
+                badReq.Message = "User not found";
+                return Unauthorized(badReq);
+            }
+
+            if (!Guid.TryParse(userId, out var userGuid))
+            {
+                badReq.Message = "Invalid user id";
+                return Unauthorized(badReq);
+            }
+            var conversations = await _chatService.GetUserAllConversions(userGuid);
+            var resp = new Response<List<ConversationResponse>>
+            {
+                Message = "Fetched all user conversations successful.",
+                Data = conversations,
+                IsSuccess = true
             };
-            return StatusCode(500, resp);
+            return Ok(resp);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Something went wrong while fetching conversations");
+            badReq.Message = "Something went wrong while fetching conversations";
+            return StatusCode(500, badReq);
+        }
+    }
+
+    [HttpGet("conversations/messages")]
+    public async Task<IActionResult> GetUserAllConversationMessages([FromQuery] string? conversationId)
+    {
+        var badReq = new Response<string>()
+        {
+            Message = "",
+            Data = null,
+            IsSuccess = false
+        };
+        try
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (userId == null)
+            {
+                badReq.Message = "User not found";
+                return Unauthorized(badReq);
+            }
+
+            if (!Guid.TryParse(userId, out var userGuid))
+            {
+                badReq.Message = "Invalid user id";
+                return Unauthorized(badReq);
+            }
+
+            Guid? conversationGuid = null;
+            if (!string.IsNullOrWhiteSpace(conversationId))
+            {
+                if (!Guid.TryParse(conversationId, out var parsedConversationGuid))
+                {
+                    badReq.Message = "Invalid conversation id";
+                    return Unauthorized(badReq);
+                }
+                conversationGuid = parsedConversationGuid;
+            }
+            var convMsgs = await _chatService.GetUserAllConversationMessages(userGuid, conversationGuid);
+
+            if (convMsgs == null)
+            {
+                badReq.Message = "Conversation not found";
+                return NotFound(badReq);
+            }
+
+            var rep = new Response<List<ChatMessageResponse>>
+            {
+                Message = "Fetched all conversation messages successful.",
+                Data = convMsgs,
+                IsSuccess = true
+            };
+            return Ok(rep);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Something went wrong while trying to fetch this conversation messages");
+            badReq.Message = "Something went wrong while trying to fetch this conversation messages";
+            return StatusCode(500, badReq);
         }
     }
 }

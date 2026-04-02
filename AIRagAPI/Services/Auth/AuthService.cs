@@ -13,14 +13,14 @@ public class AuthService(ILogger<AuthService> logger, AppDbContext db, IHttpCont
     private HttpContext HttpContext => httpContextAccessor.HttpContext!;
     
     /// <summary>
-    /// Will validate user - Create User if it doesn't exist and sign in user
+    /// Will validate user - Create User if it doesn't exist and returns claims principle for google oauth
     /// </summary>
     /// <param name="email"></param>
     /// <param name="name"></param>
     /// <param name="picture"></param>
     /// <param name="cancellationToken"></param>
     /// <exception cref="Exception"></exception>
-    public async Task ValidateUserAsync(string email, string? name, string? picture, CancellationToken cancellationToken)
+    public async Task<ClaimsPrincipal> ValidateUserAsync(string email, string? name, string? picture, CancellationToken cancellationToken)
     {
         try
         {
@@ -37,16 +37,16 @@ public class AuthService(ILogger<AuthService> logger, AppDbContext db, IHttpCont
                 };
                 
                 await db.Users.AddAsync(user,  cancellationToken);
-                await db.SaveChangesAsync(cancellationToken);
             } else if (user.PictureUrl != picture)
             {
                 // Update picture if change
                 user.PictureUrl = picture;
-                await db.SaveChangesAsync(cancellationToken);
             }
+            await db.SaveChangesAsync(cancellationToken);
             
             // Sign in User (create cookie session)
-            await CreateCookie(user);
+            var identity = await CreateCookie(user);
+            return identity;
         }
         catch (Exception ex)
         {
@@ -63,23 +63,24 @@ public class AuthService(ILogger<AuthService> logger, AppDbContext db, IHttpCont
         return user;
     }
 
-    private async Task CreateCookie(User user)
+    private async Task<ClaimsPrincipal> CreateCookie(User user)
     {
+        logger.LogInformation("Creating cookie for user {Email}", user.Email);
+        logger.LogInformation("Creating cookie for user {Id}", user.Id);
         var claims = new List<Claim>
         {
             new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
             new Claim(ClaimTypes.Email, user.Email),
             new Claim(ClaimTypes.Name, user.Name),
+            new Claim("UserId", user.Id.ToString()),
             new Claim(ClaimTypes.Role, user.Role.ToString()),
         };
             
         var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
         var principal = new ClaimsPrincipal(identity);
-        
-        await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal, new AuthenticationProperties
-        {
-            IsPersistent = true,
-            AllowRefresh = true
-        });
+
+        // logger.LogInformation("User after sign-in: {Id}",
+        //     HttpContext.User.FindFirstValue("UserId"));
+        return principal;
     }
 }

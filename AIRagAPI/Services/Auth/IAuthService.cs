@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using AIRagAPI.Domain.Entities;
 using Microsoft.AspNetCore.Authentication;
 
@@ -13,7 +14,7 @@ public interface IAuthService
     /// <param name="picture"></param>
     /// <param name="cancellationToken"></param>
     /// <exception cref="Exception"></exception>
-    public Task ValidateUserAsync(string email, string? name, string? picture, CancellationToken cancellationToken);
+    public Task<ClaimsPrincipal> ValidateUserAsync(string email, string? name, string? picture, CancellationToken cancellationToken);
     
     public Task<User?> FindUserAsync(string email);
     
