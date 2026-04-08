@@ -135,6 +135,7 @@ public class ChatService: IChatService
             .Where(c => c.UserId == userId)
             .Select(c => new ConversationResponse
             {
+                Id = c.Id.ToString(),
                 Title = c.Title,
                 UserId = c.UserId.ToString(),
                 IsActive = c.IsActive,
