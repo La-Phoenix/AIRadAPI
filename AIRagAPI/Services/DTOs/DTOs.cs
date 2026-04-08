@@ -13,6 +13,9 @@ public record ChatRequest
 {
     [Required(ErrorMessage = "Please Send a message")]
     public required string Question { get; init; }
+
+    public bool IsNewConversation { get; init; } = false;
+    public string? ConversationId { get; init; }
 }
 
 public record AddDocRequest
@@ -44,6 +47,7 @@ public record ChatMessageResponse
     public required string Order { get; set; }
     public required string CreatedAt { get; set; }
     public string? UpdatedAt { get; set; }
+    // public required string UserMessageId { get; set; }
 }
 
 public record ConversationResponse

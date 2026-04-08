@@ -60,7 +60,7 @@ public class AppDbContext: DbContext, IDataProtectionKeyContext
         
         // Messages
         modelBuilder.Entity<Message>()
-            .Property(m => m.Content).HasMaxLength(500).IsRequired();
+            .Property(m => m.Content).IsRequired();
         modelBuilder.Entity<Message>()
             .HasIndex(m => new { m.ConversationId, m.Order});
         modelBuilder.Entity<Message>()

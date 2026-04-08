@@ -33,9 +33,10 @@ public class ChatController: ControllerBase
     /// What's on Your Mind? Ask what you'd like to know about
     /// </summary>
     /// <param name="request"></param>
+    /// <param name="cancellationToken"></param>
     /// <returns></returns>
     [HttpPost]
-    public async Task<IActionResult> Ask([FromBody] ChatRequest request)
+    public async Task<IActionResult> Ask([FromBody] ChatRequest request, CancellationToken cancellationToken)
     {
         var badResp = new Response<string>
         {
@@ -51,7 +52,7 @@ public class ChatController: ControllerBase
                 badResp.Message = "Invalid user id";
                 return Unauthorized(badResp);
             }
-            var chatResponse = await _chatService.SendMessage(userGuid, request.Question);
+            var chatResponse = await _chatService.SendMessage(userGuid, request, cancellationToken);
            
             var resp = new Response<ChatMessageResponse>
             {
@@ -70,7 +71,7 @@ public class ChatController: ControllerBase
     }
 
     [HttpGet("conversations/user")]
-    public async Task<IActionResult> GetAllUserConversations()
+    public async Task<IActionResult> GetAllUserConversations(CancellationToken cancellationToken)
     {
         var badReq = new Response<string>()
         {
@@ -92,7 +93,7 @@ public class ChatController: ControllerBase
                 badReq.Message = "Invalid user id";
                 return Unauthorized(badReq);
             }
-            var conversations = await _chatService.GetUserAllConversions(userGuid);
+            var conversations = await _chatService.GetUserAllConversions(userGuid, cancellationToken);
             var resp = new Response<List<ConversationResponse>>
             {
                 Message = "Fetched all user conversations successful.",
@@ -109,8 +110,34 @@ public class ChatController: ControllerBase
         }
     }
 
+    // [HttpPost("conversations")]
+    // public async Task<IActionResult> CreateConversation(CancellationToken cancellationToken)
+    // {
+    //     var badReq = new Response<string>()
+    //     {
+    //         Message = "",
+    //         Data = null,
+    //         IsSuccess = false
+    //     };
+    //     try
+    //     {
+    //         var userId = GetUserId();
+    //         if (userId == null)
+    //         {
+    //             badReq.Message = "User not found or id invalid";
+    //             return Unauthorized(badReq);
+    //         }
+    //         
+    //         
+    //     } catch(Exception ex)
+    //     {
+    //         _logger.LogError(ex, "Something went wrong while creating conversation");
+    //         badReq.Message = "Something went wrong while creating conversation";
+    //         return StatusCode(500, badReq);
+    //     }
+    // }
     [HttpGet("conversations/messages")]
-    public async Task<IActionResult> GetUserAllConversationMessages([FromQuery] string? conversationId)
+    public async Task<IActionResult> GetUserAllConversationMessages([FromQuery] string? conversationId, CancellationToken cancellationToken)
     {
         var badReq = new Response<string>()
         {
@@ -120,16 +147,10 @@ public class ChatController: ControllerBase
         };
         try
         {
-            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            if (userId == null)
+            var userId = GetUserId();
+            if (userId is null)
             {
-                badReq.Message = "User not found";
-                return Unauthorized(badReq);
-            }
-
-            if (!Guid.TryParse(userId, out var userGuid))
-            {
-                badReq.Message = "Invalid user id";
+                badReq.Message = "User not found or id invalid";
                 return Unauthorized(badReq);
             }
 
@@ -143,9 +164,9 @@ public class ChatController: ControllerBase
                 }
                 conversationGuid = parsedConversationGuid;
             }
-            var convMsgs = await _chatService.GetUserAllConversationMessages(userGuid, conversationGuid);
+            var conversationMessages = await _chatService.GetUserAllConversationMessages(userId.Value, conversationGuid, cancellationToken);
 
-            if (convMsgs == null)
+            if (conversationMessages == null)
             {
                 badReq.Message = "Conversation not found";
                 return NotFound(badReq);
@@ -154,7 +175,7 @@ public class ChatController: ControllerBase
             var rep = new Response<List<ChatMessageResponse>>
             {
                 Message = "Fetched all conversation messages successful.",
-                Data = convMsgs,
+                Data = conversationMessages,
                 IsSuccess = true
             };
             return Ok(rep);
@@ -165,5 +186,20 @@ public class ChatController: ControllerBase
             badReq.Message = "Something went wrong while trying to fetch this conversation messages";
             return StatusCode(500, badReq);
         }
+    }
+
+    private Guid? GetUserId()
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId == null)
+        {
+            return null;
+        }
+
+        if (!Guid.TryParse(userId, out var userGuid))
+        {
+            return null;
+        }
+        return userGuid;
     }
 }
