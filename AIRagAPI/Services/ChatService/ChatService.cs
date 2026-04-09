@@ -141,6 +141,8 @@ public class ChatService: IChatService
                 IsActive = c.IsActive,
                 MessageCount = c.MessageCount,
                 Summary = c.Summary,
+                CreatedAt = c.CreatedAt.ToString(CultureInfo.InvariantCulture),
+                UpdatedAt = c.UpdatedAt.ToString()
             }).ToListAsync(cancellationToken: cancellationToken);
 
         return conversations;

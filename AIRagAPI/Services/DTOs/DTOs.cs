@@ -59,4 +59,6 @@ public record ConversationResponse
     public int MessageCount { get; set; }
     public string? Summary { get; set; }
     public List<ChatMessageResponse> Messages { get; set; } = new List<ChatMessageResponse>();
+    public required string CreatedAt { get; set; }
+    public string? UpdatedAt { get; set; }
 }
