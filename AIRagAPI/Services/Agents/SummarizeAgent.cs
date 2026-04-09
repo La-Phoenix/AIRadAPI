@@ -9,7 +9,7 @@ namespace AIRagAPI.Services.Agents;
 /// <param name="kernel"></param>
 public class SummarizeAgent (Kernel kernel): IAgent
 {
-    public async Task<string> RunAsync(string question, List<string> context)
+    public async Task<string> RunAsync(string question, List<string> context, Guid userId)
     {
         const string assistantName = "Little Phoenix";
         var prompt = $@"

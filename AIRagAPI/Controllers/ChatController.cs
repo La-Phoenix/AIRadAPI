@@ -1,6 +1,7 @@
 
 using System.Security.Claims;
 using AIRagAPI.Agents;
+using AIRagAPI.Common.UserContext;
 using AIRagAPI.Services.Agents;
 using AIRagAPI.Services.ChatService;
 using AIRagAPI.Services.DTOs;
@@ -21,11 +22,13 @@ public class ChatController: ControllerBase
     private readonly ILogger<ChatController> _logger;
     private readonly IVectorService _vectorService;
     private readonly IChatService _chatService;
-    public ChatController(Kernel kernel, IVectorService vectorService, IChatService chatService, ILogger<ChatController> logger)
+    private readonly IUserContextService _userContextService;
+    public ChatController(Kernel kernel, IVectorService vectorService, IChatService chatService, IUserContextService userContextService, ILogger<ChatController> logger)
     {
         _kernel = kernel;
         _vectorService = vectorService;
         _chatService = chatService;
+        _userContextService = userContextService;
         _logger = kernel.LoggerFactory.CreateLogger<ChatController>();
     }
 
@@ -147,7 +150,7 @@ public class ChatController: ControllerBase
         };
         try
         {
-            var userId = GetUserId();
+            var userId = _userContextService.GetUserId();
             if (userId is null)
             {
                 badReq.Message = "User not found or id invalid";
@@ -188,18 +191,5 @@ public class ChatController: ControllerBase
         }
     }
 
-    private Guid? GetUserId()
-    {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (userId == null)
-        {
-            return null;
-        }
-
-        if (!Guid.TryParse(userId, out var userGuid))
-        {
-            return null;
-        }
-        return userGuid;
-    }
+    
 }

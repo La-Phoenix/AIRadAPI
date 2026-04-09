@@ -1,6 +1,7 @@
 using Microsoft.Extensions.AI;
 using Qdrant.Client;
 using Qdrant.Client.Grpc;
+using static Qdrant.Client.Grpc.Conditions;
 
 namespace AIRagAPI.Services.Vector;
 
@@ -38,12 +39,13 @@ public class VectorService : IVectorService
 
         // Ensure the collection exists (Gemini embedding size 1024)
         EnsureCollectionExists().GetAwaiter().GetResult();
+        EnsureIndexesAsync().GetAwaiter().GetResult();
     }
 
     /// <summary>
     /// Add a document by splitting into chunks and generating Gemini embeddings
     /// </summary>
-    public async Task AddDocumentAsync(string text)
+    public async Task AddDocumentAsync(string text, Guid userId)
     {
         string docId = Guid.NewGuid().ToString();
         var chunks = ChunkText(text, chunkSize: 150); // smaller chunks for Gemini
@@ -62,7 +64,8 @@ public class VectorService : IVectorService
                     ["text"] = chunks[i],
                     ["docId"] = docId,
                     ["chunkIndex"] = i,
-                    ["source"] = "input"
+                    ["source"] = "input",
+                    ["userId"] = userId.ToString()
                 }
             });
         }
@@ -71,38 +74,54 @@ public class VectorService : IVectorService
     }
 
     /// <summary>
-    /// Search for relevant text using hybrid (vector + keyword) scoring
+    /// Search for user relevant text using hybrid (vector + keyword) scoring
     /// </summary>
-    public async Task<List<string>> SearchAsync(string query, ulong top = 5)
+    public async Task<List<string>> SearchAsync(string query, Guid userId, ulong top = 5)
     {
+        // 1. Generate vector embedding for query
         var embeddings = await _embeddingGenerator.GenerateAsync(new[] { query });
         var vector = embeddings.First().Vector.ToArray();
 
+        // 2. Query Qdrant with userId filter
         var vectorResults = await _qdrant.QueryAsync(
             collectionName: CollectionName,
             query: vector,
-            limit: top * 2
+            limit: top * 3, // overfetch to account for filtering & scoring
+            filter: MatchKeyword("userId", userId.ToString())
         );
 
+        // 3. Split query into words for keyword boosting
         var queryWords = query
             .ToLower()
             .Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
+        // 4. Score each chunk combining vector similarity + keyword match
         var scored = vectorResults
             .Where(r => r.Payload.ContainsKey("text"))
             .Select(r =>
             {
                 var chunk = r.Payload["text"]?.ToString() ?? "";
-                int keyWordScore = queryWords.Count(w => chunk.ToLower().Contains(w));
-                double finalScore = r.Score + (keyWordScore * 0.1);
-                return new { Text = chunk, Score = finalScore };
-            });
+                var chunkWords = chunk
+                    .ToLower()
+                    .Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
-        return scored
+                // Count exact word matches to avoid substring false positives
+                int keyWordScore = queryWords.Count(w => chunkWords.Contains(w));
+
+                // Normalize keyword score (optional)
+                double keywordBoost = keyWordScore / (double)Math.Max(chunkWords.Length, 1);
+
+                // Combine vector score + keyword boost
+                double finalScore = r.Score + (keywordBoost * 0.3); // tune weight as needed
+
+                return new { Text = chunk, Score = finalScore };
+            })
             .OrderByDescending(x => x.Score)
             .Take((int)top)
             .Select(x => x.Text)
             .ToList();
+
+        return scored;
     }
 
     private async Task EnsureCollectionExists()
@@ -117,6 +136,12 @@ public class VectorService : IVectorService
                 Distance = Distance.Cosine
             });
         }
+    }
+    
+    public async Task EnsureIndexesAsync()
+    {
+        // Only create if not exists (Qdrant is idempotent)
+        await _qdrant.CreatePayloadIndexAsync(CollectionName, "userId", PayloadSchemaType.Keyword);
     }
 
     private static string ComputeUuidFromText(string text)

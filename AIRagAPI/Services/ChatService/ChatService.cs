@@ -32,7 +32,7 @@ public class ChatService: IChatService
         if (user == null) throw new Exception("User not found");
         
         Guid? conversationId = null;
-        if (string.IsNullOrEmpty(request.ConversationId))
+        if (!string.IsNullOrEmpty(request.ConversationId))
         {
             if (!Guid.TryParse(request.ConversationId, out var convId))
             {
@@ -101,7 +101,7 @@ public class ChatService: IChatService
         ";
         
         // Run Agent pipeline (RAG + LLM)
-        var response = await _agentCoordinator.AskAsync(enrichedQuestion);
+        var response = await _agentCoordinator.AskAsync(enrichedQuestion, userId);
         
         // Save AI response - next msg
         var aiMessage = new Message
@@ -146,7 +146,13 @@ public class ChatService: IChatService
         return conversations;
     }
 
-    // Fetch active or specific conversation messages
+    /// <summary>
+    /// Fetches all user conversation messages
+    /// </summary>
+    /// <param name="userId"></param>
+    /// <param name="conversationId"></param>
+    /// <param name="cancellationToken"></param>
+    /// <returns></returns>
     public async Task<List<ChatMessageResponse>?> GetUserAllConversationMessages(Guid userId, Guid? conversationId, CancellationToken cancellationToken)
     {
         var conversation = conversationId == null ? 

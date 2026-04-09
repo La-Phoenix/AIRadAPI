@@ -9,9 +9,9 @@ namespace AIRagAPI.Services.Agents;
 /// <param name="vectorService"></param>
 public class RetrieverAgent(IVectorService vectorService) : IAgent
 {
-    public async Task<string> RunAsync(string question, List<string> context)
+    public async Task<string> RunAsync(string question, List<string> context, Guid userId)
     {
-        var docs = await vectorService.SearchAsync(question);
+        var docs = await vectorService.SearchAsync(question, userId);
         return string.Join("\n", docs);
     }
 }

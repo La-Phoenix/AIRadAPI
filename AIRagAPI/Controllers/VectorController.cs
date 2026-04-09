@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using AIRagAPI.Common.UserContext;
 using AIRagAPI.Services.Vector;
 using AIRagAPI.Services.DTOs;
 using Microsoft.AspNetCore.Authorization;
@@ -9,17 +10,12 @@ namespace AIRagAPI.Controllers;
 [ApiController]
 [Route("api/vector")]
 [Authorize]
-public class VectorController: ControllerBase
+public class VectorController(
+    IVectorService vectorService,
+    IUserContextService userContextService,
+    ILogger<VectorController> logger)
+    : ControllerBase
 {
-    private readonly IVectorService _vectorService;
-    private readonly ILogger<VectorController> _logger;
-    
-    public VectorController(IVectorService vectorService, ILogger<VectorController> logger)
-    {
-        _vectorService = vectorService;
-        _logger = logger;
-    }
-
     /// <summary>
     /// Create Text Vector for RAG functionality
     /// </summary>
@@ -28,9 +24,22 @@ public class VectorController: ControllerBase
     [HttpPost("add")]
     public async Task<IActionResult> Add([FromBody] AddDocRequest request)
     {
+        var badRequest = new Response<string>()
+        {
+            Message = "",
+            Data = null,
+            IsSuccess = false
+        };
         try
         {
-            await _vectorService.AddDocumentAsync(request.Text);
+            var userId = userContextService.GetUserId();
+            if (userId == null)
+            {
+                badRequest.Message = "User not found or invalid user id";
+                return Unauthorized(badRequest);
+            }
+            
+            await vectorService.AddDocumentAsync(request.Text, userId.Value);
             var resp = new Response<string>
             {
                 Message = "Document added successfully.",
@@ -41,14 +50,9 @@ public class VectorController: ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error adding text vector");
-            var response = new Response<string>
-            {
-                Message = "Error Creating text vector",
-                Data = null,
-                IsSuccess = false
-            };
-            return StatusCode(500, response);
+            logger.LogError(ex, "Error adding text vector");
+            badRequest.Message = "Error adding text vector";
+            return StatusCode(500, badRequest);
         }
     }
 
@@ -63,9 +67,22 @@ public class VectorController: ControllerBase
     [HttpGet("search")]
     public async Task<IActionResult> Search([FromQuery] string query, [FromQuery] ulong top = 3)
     {
+        var badRequest = new Response<string>()
+        {
+            Message = "",
+            Data = null,
+            IsSuccess = false
+        };
+        
         try
         {
-            var result = await _vectorService.SearchAsync(query, top);
+            var userId = userContextService.GetUserId();
+            if (userId == null)
+            {
+                badRequest.Message = "User not found or invalid user id";
+                return Unauthorized(badRequest);
+            }
+            var result = await vectorService.SearchAsync(query, userId.Value, top);
             var resp = new Response<List<string>>
             {
                 Message = "Search successful.",
@@ -76,14 +93,9 @@ public class VectorController: ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error Searching Text Vector");
-            var resp = new Response<string>
-            {
-                Message = "Error Searching Text Vector",
-                Data = null,
-                IsSuccess = false
-            };
-            return StatusCode(500, "Error Searching Text Vector");
+            logger.LogError(ex, "Error Searching Text Vector");
+            badRequest.Message = "Error Searching Text Vector";
+            return StatusCode(500, badRequest);
         }
     }
     

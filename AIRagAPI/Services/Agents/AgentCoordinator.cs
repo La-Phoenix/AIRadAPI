@@ -10,13 +10,13 @@ public class AgentCoordinator
         _agents = agents.ToList();
     }
     // Runs Retrieval and Summarize agent. Uses Previous response to feed the later
-    public async Task<string> AskAsync(string question)
+    public async Task<string> AskAsync(string question, Guid userId)
     {
         List<string> context = new List<string>();
 
         foreach (var agent in _agents)
         {
-            var output = await agent.RunAsync(question, context);
+            var output = await agent.RunAsync(question, context, userId);
             context.Add(output); // Each agent builds on previous context
             
         }
