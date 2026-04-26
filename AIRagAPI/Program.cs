@@ -3,6 +3,7 @@ using AIRagAPI.Exceptions;
 using AIRagAPI.Extensions;
 using AIRagAPI.Generators;
 using AIRagAPI.Services.Auth;
+using AIRagAPI.Services.ChatService;
 using System.Security.Claims;
 using AIRagAPI.Common;
 using Microsoft.AspNetCore.Authentication;
@@ -199,6 +200,15 @@ builder.Services.AddAuthentication(options =>
 //Register Application Services
 builder.Services.AddApplicationServices();
 
+// Register Real-time Chat Services
+builder.Services.AddScoped<IChatManagementService, ChatManagementService>();
+builder.Services.AddScoped<IChatMessageService, ChatMessageService>();
+builder.Services.AddSingleton<ChatPresenceTracker>();
+builder.Services.AddSignalR(options =>
+{
+    options.EnableDetailedErrors = true;
+});
+
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddControllers();
@@ -271,9 +281,18 @@ app.Use(async (context, next) =>
 
     await next();
 });
+
+// Enable WebSocket support
+var webSocketOptions = new WebSocketOptions
+{
+    KeepAliveInterval = TimeSpan.FromMinutes(2)
+};
+app.UseWebSockets(webSocketOptions);
+
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
+app.MapHub<ChatHub>("/api/chat-hub");
 app.MapHealthChecks("/health");
 
 //Apply migrations automatically on startup
